@@ -57,6 +57,15 @@ CARD_KEYWORDS = {
 # ---------------------------------------------------------------------------
 # Arduino serial communication
 # ---------------------------------------------------------------------------
-SERIAL_PORT = "COM3"   # Windows: "COM3" etc. | Linux/Mac: "/dev/ttyUSB0"
-SERIAL_BAUD = 9600
-SERIAL_ENABLED = False  # Set True once Arduino is connected
+SERIAL_PORT    = "COM3"   # Windows: "COM3" etc. | Linux/Mac: "/dev/ttyUSB0"
+SERIAL_BAUD    = 9600
+SERIAL_ENABLED = False    # Set True once Arduino is connected
+
+# ---------------------------------------------------------------------------
+# IoT HTTP endpoint
+# The CV pipeline POSTs scan results here as JSON.
+# Run server/app.py on the same machine or any device on the network.
+# ---------------------------------------------------------------------------
+ENDPOINT_ENABLED = True
+ENDPOINT_URL     = "http://127.0.0.1:5000/scan"  # change host if server is on another device
+ENDPOINT_TIMEOUT = 2  # seconds — keeps the camera loop from stalling

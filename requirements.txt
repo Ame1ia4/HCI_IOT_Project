@@ -5,3 +5,5 @@ pyserial
 tensorflow
 albumentations
 matplotlib
+flask
+requests

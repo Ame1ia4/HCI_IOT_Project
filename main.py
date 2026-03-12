@@ -6,6 +6,7 @@ from validation.colour_validator import detect_card_type
 from validation.ocr_validator import extract_text, keyword_confidence, extract_expiry, is_expired
 from validation.layout_validator import validate_layout
 from comms.arduino_serial import send_result
+from comms.http_client import post_result
 from validation.ml_validator import predict as ml_predict, is_model_available
 
 
@@ -139,6 +140,7 @@ def main():
             results = run_validators(card_img)
             draw_overlay(frame, contour, results)
             send_result(results["is_valid"])
+            post_result(results)
         else:
             cv2.putText(
                 frame, "No card detected",
