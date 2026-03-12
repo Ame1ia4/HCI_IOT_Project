@@ -42,20 +42,15 @@ VALIDATION_WEIGHTS = {
 # Format: (H_low, H_high, S_low, S_high, V_low, V_high)
 # ---------------------------------------------------------------------------
 CARD_COLOUR_RANGES = {
-    "hse_medical":    (90,  150, 40,  255, 30,  180),
-    "gp_visit":       (80,  100, 60,  200, 100, 220),
-    "parking_permit": (15,  35,  150, 255, 150, 255),
-    "ehic":           (100, 130, 80,  255, 80,  220),
+    "parking_permit_ie": (15, 35, 150, 255, 150, 255),   # Orange/yellow — DDAI Ireland
+    "parking_permit_eu": (100, 130, 80, 255, 100, 220),  # Light blue — EU standard
 }
 
 # ---------------------------------------------------------------------------
 # OCR keywords for known card types
 # ---------------------------------------------------------------------------
 CARD_KEYWORDS = {
-    "hse_medical":    ["HSE", "Health Service Executive"],
-    "gp_visit":       ["HSE", "GP Visit"],
     "parking_permit": ["Disabled Parking", "DDAI", "Ireland"],
-    "ehic":           ["European Health Insurance Card", "IE"],
 }
 
 # ---------------------------------------------------------------------------
