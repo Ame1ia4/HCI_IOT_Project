@@ -75,8 +75,7 @@ def run_validators(card_img):
         )
     score = round(score, 3)
 
-    # Card is valid only when score threshold is met AND a student number is found
-    is_valid = score >= config.VALIDATION_SCORE_THRESHOLD and student_number is not None
+    is_valid = score >= config.VALIDATION_SCORE_THRESHOLD
 
     return {
         "card_type":      card_type,
@@ -131,7 +130,15 @@ def main():
     cap = get_camera()
     print(f"Camera source: {config.CAMERA_SOURCE} — press Q to quit, D to toggle debug view")
 
-    debug = False
+    debug        = False
+    last_card    = None   # last successfully warped card image
+    last_contour = None
+    no_detect    = 0      # consecutive frames without detection
+    last_results = None   # cached validator output
+    ocr_frame    = 0      # counts frames since last OCR run
+
+    COAST_FRAMES = 20   # keep last card for up to N frames when detection drops out
+    OCR_INTERVAL = 8    # re-run validators every N frames (OCR is slow)
 
     while True:
         ret, frame = cap.read()
@@ -143,14 +150,33 @@ def main():
 
         card_img, contour, edges = detect_card(frame, debug=True)
 
+        # --- Detection coasting -------------------------------------------
+        # Keep the last known card for a short window so the result doesn't
+        # flicker when the detector briefly loses the card between frames.
         if card_img is not None:
-            results = run_validators(card_img)
-            draw_overlay(frame, contour, results)
-            send_result(results["is_valid"])
-            post_result(results)
+            last_card    = card_img
+            last_contour = contour
+            no_detect    = 0
+        else:
+            no_detect += 1
+            if no_detect <= COAST_FRAMES and last_card is not None:
+                card_img = last_card
+                contour  = last_contour
+
+        if card_img is not None:
+            # Re-run validators only every OCR_INTERVAL frames
+            ocr_frame += 1
+            if last_results is None or ocr_frame % OCR_INTERVAL == 0:
+                last_results = run_validators(card_img)
+                send_result(last_results["is_valid"])
+                post_result(last_results)
+
+            draw_overlay(frame, contour, last_results)
             if debug:
                 cv2.imshow("Warped Card", card_img)
         else:
+            last_results = None
+            ocr_frame    = 0
             cv2.putText(
                 frame, "No card detected",
                 (10, 30),

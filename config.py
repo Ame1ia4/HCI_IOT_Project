@@ -29,12 +29,12 @@ CANNY_THRESHOLD_HIGH = 100
 # ---------------------------------------------------------------------------
 # Validation thresholds
 # ---------------------------------------------------------------------------
-VALIDATION_SCORE_THRESHOLD = 0.75  # minimum weighted score to call VALID
+VALIDATION_SCORE_THRESHOLD = 0.65  # minimum weighted score to call VALID
 
 VALIDATION_WEIGHTS = {
-    "colour": 0.3,
-    "text":   0.5,
-    "layout": 0.2,
+    "colour": 0.4,  # colour of green band — very reliable
+    "text":   0.3,  # OCR keywords — less reliable on laminated cards under camera
+    "layout": 0.3,  # layout zone checks — very reliable
 }
 
 # ---------------------------------------------------------------------------

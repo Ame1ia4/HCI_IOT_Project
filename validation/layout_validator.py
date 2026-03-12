@@ -57,38 +57,31 @@ def _dark_pixel_ratio(zone_img, threshold=60):
 #   weight      : contribution to the overall layout confidence score
 # ---------------------------------------------------------------------------
 
-# UL Student Card layout:
-#   Top row  — dark green header band spanning the full width
-#   Bottom-left  — student photo (lighter region)
-#   Bottom-right — printed text (dark pixels on white)
+# UL Student Card layout (3-row, 1-column grid):
 #
-#   (0,0) green | (0,1) green | (0,2) green
-#   ------------+-------------+------------
-#   (1,0) photo | (1,1) text  | (1,2) text
+#   row 0 — Name + photo  (white background, dark text)
+#   row 1 — Green band    (University of Limerick / STUDENT)
+#   row 2 — ID number row (white background, dark text)
 
 _RULES_UL = [
     {
-        "description": "Green header present in top-left zone",
-        "zone":        (0, 0),
+        "description": "Green band in middle row",
+        "zone":        (1, 0),
+        "rows":        3,
+        "cols":        1,
         "check":       "colour",
         "hsv_range":   CARD_COLOUR_RANGES["ul_student"],
-        "min_ratio":   0.25,
-        "weight":      0.4,
+        "min_ratio":   0.20,
+        "weight":      0.5,
     },
     {
-        "description": "Green header present in top-right zone",
-        "zone":        (0, 2),
-        "check":       "colour",
-        "hsv_range":   CARD_COLOUR_RANGES["ul_student"],
-        "min_ratio":   0.25,
-        "weight":      0.3,
-    },
-    {
-        "description": "Printed text present in bottom-right zone",
-        "zone":        (1, 2),
+        "description": "Dark text (ID number) in bottom row",
+        "zone":        (2, 0),
+        "rows":        3,
+        "cols":        1,
         "check":       "dark",
         "min_ratio":   0.03,
-        "weight":      0.3,
+        "weight":      0.5,
     },
 ]
 
@@ -118,7 +111,9 @@ def validate_layout(card_img, card_type):
 
     for rule in rules:
         row, col = rule["zone"]
-        zone     = _get_zone(card_img, row, col)
+        zone     = _get_zone(card_img, row, col,
+                             rows=rule.get("rows", 2),
+                             cols=rule.get("cols", 3))
 
         if rule["check"] == "dark":
             ratio = _dark_pixel_ratio(zone)

@@ -27,9 +27,10 @@ def validate_colour(card_img, card_type):
     lower = np.array([h_lo, s_lo, v_lo], dtype=np.uint8)
     upper = np.array([h_hi, s_hi, v_hi], dtype=np.uint8)
 
-    # Sample top 30% of card where the coloured header band sits
-    card_h = card_img.shape[0]
-    top_band = card_img[:int(card_h * 0.30), :]
+    # Sample the middle third of the card where the UL green band sits
+    # (top third = name/photo, middle = green band, bottom = ID number)
+    card_h   = card_img.shape[0]
+    top_band = card_img[int(card_h * 0.30):int(card_h * 0.70), :]
 
     hsv  = cv2.cvtColor(top_band, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv, lower, upper)

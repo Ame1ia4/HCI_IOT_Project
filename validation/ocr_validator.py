@@ -1,6 +1,7 @@
 import re
 
 import cv2
+import numpy as np
 import pytesseract
 
 from config import CARD_KEYWORDS
@@ -11,17 +12,16 @@ pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tessera
 
 def preprocess_for_ocr(card_img):
     """
-    Convert card to grayscale and apply adaptive thresholding to improve
-    Tesseract accuracy on worn, laminated, or unevenly lit cards.
+    Convert card to grayscale and sharpen edges.
+
+    Adaptive thresholding is intentionally avoided: it inverts white text on
+    the dark green band into unreadable black blobs. Sharpening alone gives
+    Tesseract enough contrast to read both the white-on-green text (university
+    name / STUDENT) and the black-on-white text (name, ID number).
     """
-    gray = cv2.cvtColor(card_img, cv2.COLOR_BGR2GRAY)
-    processed = cv2.adaptiveThreshold(
-        gray, 255,
-        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY,
-        11, 2,
-    )
-    return processed
+    gray   = cv2.cvtColor(card_img, cv2.COLOR_BGR2GRAY)
+    kernel = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]])
+    return cv2.filter2D(gray, -1, kernel)
 
 
 def extract_text(card_img):
@@ -37,7 +37,7 @@ def extract_text(card_img):
     processed = preprocess_for_ocr(card_img)
     text = pytesseract.image_to_string(
         processed,
-        config="--psm 6",  # assume a single block of text
+        config="--psm 11",  # sparse text — handles mixed layouts (name + green band + ID)
     )
     return text
 
@@ -96,21 +96,26 @@ def extract_student_number(text):
     return match.group(1) if match else None
 
 
+# Words that appear on the card itself and should not be mistaken for a name
+_CARD_VOCAB = {
+    "NAME", "AINM", "UNIVERSITY", "LIMERICK", "OLLSCOIL", "LUIMNIGH",
+    "STUDENT", "MAC", "LEINN", "LÉINN", "ID", "NO", "UIMH", "AITH", "UL", "OF",
+}
+
+
 def has_name(text):
     """
-    Return True if OCR text contains at least one line with two or more
-    capitalised alphabetic words — a heuristic for a printed name.
+    Return True if OCR text contains a line with at least two consecutive
+    all-alpha words that are not part of the standard UL card vocabulary.
 
-    Examples that pass:  'John Smith', 'Mary O Brien'
-    Examples that fail:  'UNIVERSITY OF LIMERICK', 'Student Card'
+    Handles both ALL-CAPS and Title-Case printed names.
+
+    Examples that pass:  'CONOR CLANCY', 'John Smith', 'MARY O BRIEN'
+    Examples that fail:  'UNIVERSITY OF LIMERICK', 'STUDENT MAC LEINN'
     """
     for line in text.splitlines():
-        words = line.strip().split()
-        # Count words that start with a capital and are all-alpha (no ALL-CAPS)
-        name_words = [
-            w for w in words
-            if len(w) > 1 and w[0].isupper() and w[1:].islower() and w.isalpha()
-        ]
+        words = [w.upper().strip(".,") for w in line.strip().split()]
+        name_words = [w for w in words if w.isalpha() and len(w) >= 2 and w not in _CARD_VOCAB]
         if len(name_words) >= 2:
             return True
     return False
