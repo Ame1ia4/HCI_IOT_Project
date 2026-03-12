@@ -82,7 +82,7 @@ def detect_card(frame):
             break  # contours are sorted so no point checking further
 
         peri   = cv2.arcLength(contour, True)
-        approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+        approx = cv2.approxPolyDP(contour, 0.04 * peri, True)
 
         if len(approx) != 4:
             continue
@@ -100,13 +100,13 @@ def detect_card(frame):
             np.linalg.norm(br - tr),
         )
 
-        if height == 0:
+        if height == 0 or width == 0:
             continue
 
         aspect = width / height
         if abs(aspect - CARD_ASPECT_RATIO) > ASPECT_RATIO_TOL:
             # Try the flipped ratio in case card is held portrait
-            if abs((1 / aspect) - CARD_ASPECT_RATIO) > ASPECT_RATIO_TOL:
+            if aspect == 0 or abs((1 / aspect) - CARD_ASPECT_RATIO) > ASPECT_RATIO_TOL:
                 continue
 
         warped = perspective_transform(frame, pts)

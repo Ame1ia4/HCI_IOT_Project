@@ -20,11 +20,11 @@ FRAME_HEIGHT = 480
 # ---------------------------------------------------------------------------
 # Card detection
 # ---------------------------------------------------------------------------
-CARD_ASPECT_RATIO   = 1.585   # ISO/IEC 7810 ID-1: 85.6mm x 54mm
-ASPECT_RATIO_TOL    = 0.15    # ± tolerance on aspect ratio check
-MIN_CARD_AREA       = 8000    # minimum contour area in pixels
-CANNY_THRESHOLD_LOW  = 50
-CANNY_THRESHOLD_HIGH = 150
+CARD_ASPECT_RATIO    = 1.585  # ISO/IEC 7810 ID-1: 85.6mm x 54mm
+ASPECT_RATIO_TOL     = 0.3   # ± tolerance — loosened for real-world camera angles
+MIN_CARD_AREA        = 5000  # minimum contour area in pixels
+CANNY_THRESHOLD_LOW  = 30
+CANNY_THRESHOLD_HIGH = 100
 
 # ---------------------------------------------------------------------------
 # Validation thresholds
@@ -42,14 +42,16 @@ VALIDATION_WEIGHTS = {
 # Format: (H_low, H_high, S_low, S_high, V_low, V_high)
 # ---------------------------------------------------------------------------
 CARD_COLOUR_RANGES = {
-    "ul_student": (140, 170, 80, 255, 30, 160),  # UL dark green — #006B3C approx
+    # UL dark green #006B3C — OpenCV HSV: H≈77, S=255, V=107
+    # H range 55-100 covers lighting variation; V range 20-160 covers dim/bright
+    "ul_student": (55, 100, 80, 255, 20, 160),
 }
 
 # ---------------------------------------------------------------------------
 # OCR keywords for known card types
 # ---------------------------------------------------------------------------
 CARD_KEYWORDS = {
-    "ul_student": ["University of Limerick", "UL", "Student"],
+    "ul_student": ["University of Limerick", "UL", "Student", "University"],
 }
 
 # ---------------------------------------------------------------------------

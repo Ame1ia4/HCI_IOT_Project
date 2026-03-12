@@ -27,15 +27,16 @@ def post_result(results: dict):
         return
 
     payload = {
-        "timestamp":   datetime.datetime.now().isoformat(timespec="seconds"),
-        "is_valid":    results.get("is_valid", False),
-        "card_type":   results.get("card_type"),
-        "score":       results.get("score", 0.0),
-        "colour_conf": results.get("colour_conf", 0.0),
-        "text_conf":   results.get("text_conf", 0.0),
-        "layout_conf": results.get("layout_conf", 0.0),
-        "ml_conf":     results.get("ml_conf", 0.0),
-        "expired":     results.get("expired", True),
+        "timestamp":      datetime.datetime.now().isoformat(timespec="seconds"),
+        "is_valid":       results.get("is_valid", False),
+        "card_type":      results.get("card_type"),
+        "score":          results.get("score", 0.0),
+        "colour_conf":    results.get("colour_conf", 0.0),
+        "text_conf":      results.get("text_conf", 0.0),
+        "layout_conf":    results.get("layout_conf", 0.0),
+        "ml_conf":        results.get("ml_conf", 0.0),
+        "student_number": results.get("student_number"),
+        "name_found":     results.get("name_found", False),
     }
 
     try:

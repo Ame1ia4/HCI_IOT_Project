@@ -1,10 +1,12 @@
 import re
-from datetime import datetime
 
 import cv2
 import pytesseract
 
 from config import CARD_KEYWORDS
+
+# Point pytesseract at the default Windows install location
+pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
 
 def preprocess_for_ocr(card_img):
@@ -81,36 +83,34 @@ def keyword_confidence(text, card_type):
     return round(len(matched) / len(keywords), 3)
 
 
-def extract_expiry(text):
+def extract_student_number(text):
     """
-    Search OCR text for a date in DD/MM/YYYY format.
+    Search OCR text for a student ID number (7–9 consecutive digits).
+
+    UL student numbers are 7 digits (e.g. 21234567 or 1234567).
 
     Returns:
-      datetime object if found, otherwise None.
+      The matched string if found, otherwise None.
     """
-    match = re.search(r"\b(\d{2})[\/\-\.](\d{2})[\/\-\.](\d{4})\b", text)
-    if not match:
-        return None
-    try:
-        return datetime(
-            int(match.group(3)),
-            int(match.group(2)),
-            int(match.group(1)),
-        )
-    except ValueError:
-        return None
+    match = re.search(r"\b(\d{7,9})\b", text)
+    return match.group(1) if match else None
 
 
-def is_expired(expiry_date):
+def has_name(text):
     """
-    Check whether the given expiry date has passed.
+    Return True if OCR text contains at least one line with two or more
+    capitalised alphabetic words — a heuristic for a printed name.
 
-    Args:
-      expiry_date: datetime object from extract_expiry(), or None.
-
-    Returns:
-      True if expired or no date found, False if still valid.
+    Examples that pass:  'John Smith', 'Mary O Brien'
+    Examples that fail:  'UNIVERSITY OF LIMERICK', 'Student Card'
     """
-    if expiry_date is None:
-        return True  # treat missing expiry as expired (fail safe)
-    return datetime.now() > expiry_date
+    for line in text.splitlines():
+        words = line.strip().split()
+        # Count words that start with a capital and are all-alpha (no ALL-CAPS)
+        name_words = [
+            w for w in words
+            if len(w) > 1 and w[0].isupper() and w[1:].islower() and w.isalpha()
+        ]
+        if len(name_words) >= 2:
+            return True
+    return False

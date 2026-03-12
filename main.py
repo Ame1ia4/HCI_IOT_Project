@@ -3,7 +3,7 @@ import cv2
 import config
 from detection.card_detector import detect_card
 from validation.colour_validator import detect_card_type
-from validation.ocr_validator import extract_text, keyword_confidence, extract_expiry, is_expired
+from validation.ocr_validator import extract_text, keyword_confidence, extract_student_number, has_name
 from validation.layout_validator import validate_layout
 from comms.arduino_serial import send_result
 from comms.http_client import post_result
@@ -26,29 +26,30 @@ def run_validators(card_img):
 
     Returns a dict with keys:
       card_type, colour_conf, text_conf, layout_valid, layout_conf,
-      ml_conf, expired, score, is_valid
+      ml_conf, student_number, name_found, score, is_valid
     """
     # 1. Colour — also determines which card type we're dealing with
     card_type, colour_conf = detect_card_type(card_img)
 
     if card_type is None:
         return {
-            "card_type":    None,
-            "colour_conf":  0.0,
-            "text_conf":    0.0,
-            "layout_valid": False,
-            "layout_conf":  0.0,
-            "ml_conf":      0.0,
-            "expired":      True,
-            "score":        0.0,
-            "is_valid":     False,
+            "card_type":      None,
+            "colour_conf":    0.0,
+            "text_conf":      0.0,
+            "layout_valid":   False,
+            "layout_conf":    0.0,
+            "ml_conf":        0.0,
+            "student_number": None,
+            "name_found":     False,
+            "score":          0.0,
+            "is_valid":       False,
         }
 
     # 2. OCR
-    text       = extract_text(card_img)
-    text_conf  = keyword_confidence(text, card_type)
-    expiry     = extract_expiry(text)
-    expired    = is_expired(expiry)
+    text           = extract_text(card_img)
+    text_conf      = keyword_confidence(text, card_type)
+    student_number = extract_student_number(text)
+    name_found     = has_name(text)
 
     # 3. Layout
     layout_valid, layout_conf = validate_layout(card_img, card_type)
@@ -72,19 +73,22 @@ def run_validators(card_img):
             text_conf   * w["text"]   +
             layout_conf * w["layout"]
         )
-    score    = round(score, 3)
-    is_valid = score >= config.VALIDATION_SCORE_THRESHOLD and not expired
+    score = round(score, 3)
+
+    # Card is valid only when score threshold is met AND a student number is found
+    is_valid = score >= config.VALIDATION_SCORE_THRESHOLD and student_number is not None
 
     return {
-        "card_type":    card_type,
-        "colour_conf":  colour_conf,
-        "text_conf":    text_conf,
-        "layout_valid": layout_valid,
-        "layout_conf":  layout_conf,
-        "ml_conf":      ml_conf,
-        "expired":      expired,
-        "score":        score,
-        "is_valid":     is_valid,
+        "card_type":      card_type,
+        "colour_conf":    colour_conf,
+        "text_conf":      text_conf,
+        "layout_valid":   layout_valid,
+        "layout_conf":    layout_conf,
+        "ml_conf":        ml_conf,
+        "student_number": student_number,
+        "name_found":     name_found,
+        "score":          score,
+        "is_valid":       is_valid,
     }
 
 
@@ -104,14 +108,15 @@ def draw_overlay(frame, contour, results):
     )
 
     # Debug info in bottom-left corner
-    ml_str = f"ML: {results['ml_conf']:.2f}" if is_model_available() else "ML: n/a"
+    ml_str  = f"ML: {results['ml_conf']:.2f}" if is_model_available() else "ML: n/a"
+    id_str  = f"ID: {results['student_number']}" if results["student_number"] else "ID: not found"
+    name_str = "Name: yes" if results["name_found"] else "Name: no"
     debug_lines = [
         f"Type:   {results['card_type'] or 'unknown'}",
         f"Colour: {results['colour_conf']:.2f}  "
         f"Text: {results['text_conf']:.2f}  "
         f"Layout: {results['layout_conf']:.2f}  {ml_str}",
-        f"Score:  {results['score']:.2f}  "
-        f"{'EXPIRED' if results['expired'] else 'Not expired'}",
+        f"Score:  {results['score']:.2f}  {id_str}  {name_str}",
     ]
     fh = frame.shape[0]
     for i, line in enumerate(debug_lines):
