@@ -50,7 +50,7 @@ def perspective_transform(frame, pts):
     return cv2.warpPerspective(frame, M, (dst_w, dst_h))
 
 
-def detect_card(frame):
+def detect_card(frame, debug=False):
     """
     Locate a parking permit card in a camera frame.
 
@@ -60,10 +60,13 @@ def detect_card(frame):
       3. Contour search — filter by area and aspect ratio (~1.585 for ID-1 cards)
       4. Perspective warp to produce a flat, top-down crop
 
+    Args:
+      frame: BGR camera frame.
+      debug: When True, also return the Canny edge image for visualisation.
+
     Returns:
-      (warped, contour) where warped is the cropped card image and contour is
-      the 4-point bounding box in the original frame, or (None, None) if no
-      card is found.
+      (warped, contour, edges) when debug=True, or (warped, contour) otherwise.
+      warped and contour are None if no card is found.
     """
     gray    = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -81,13 +84,16 @@ def detect_card(frame):
         if area < MIN_CARD_AREA:
             break  # contours are sorted so no point checking further
 
+        # Try approxPolyDP first; fall back to minimum-area rectangle for
+        # laminated cards whose rounded corners produce more than 4 vertices.
         peri   = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, 0.04 * peri, True)
 
-        if len(approx) != 4:
-            continue
-
-        pts = approx.reshape(4, 2).astype("float32")
+        if len(approx) == 4:
+            pts = approx.reshape(4, 2).astype("float32")
+        else:
+            box = cv2.boxPoints(cv2.minAreaRect(contour))
+            pts = box.astype("float32")
         rect = order_points(pts)
         tl, tr, br, bl = rect
 
@@ -110,6 +116,11 @@ def detect_card(frame):
                 continue
 
         warped = perspective_transform(frame, pts)
-        return warped, approx
+        contour_out = approx if len(approx) == 4 else box.astype(np.int32).reshape(-1, 1, 2)
+        if debug:
+            return warped, contour_out, edges
+        return warped, contour_out
 
+    if debug:
+        return None, None, edges
     return None, None

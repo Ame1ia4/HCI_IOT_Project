@@ -129,7 +129,9 @@ def draw_overlay(frame, contour, results):
 
 def main():
     cap = get_camera()
-    print(f"Camera source: {config.CAMERA_SOURCE} — press Q to quit")
+    print(f"Camera source: {config.CAMERA_SOURCE} — press Q to quit, D to toggle debug view")
+
+    debug = False
 
     while True:
         ret, frame = cap.read()
@@ -139,13 +141,15 @@ def main():
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
-        card_img, contour = detect_card(frame)
+        card_img, contour, edges = detect_card(frame, debug=True)
 
         if card_img is not None:
             results = run_validators(card_img)
             draw_overlay(frame, contour, results)
             send_result(results["is_valid"])
             post_result(results)
+            if debug:
+                cv2.imshow("Warped Card", card_img)
         else:
             cv2.putText(
                 frame, "No card detected",
@@ -155,8 +159,21 @@ def main():
 
         cv2.imshow("Disability Card Validator", frame)
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        if debug:
+            cv2.imshow("Canny Edges", edges)
+        else:
+            for win in ("Canny Edges", "Warped Card"):
+                try:
+                    cv2.destroyWindow(win)
+                except cv2.error:
+                    pass
+
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
             break
+        if key == ord("d"):
+            debug = not debug
+            print(f"Debug mode {'ON' if debug else 'OFF'}")
 
     cap.release()
     cv2.destroyAllWindows()
