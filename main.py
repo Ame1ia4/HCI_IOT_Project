@@ -5,6 +5,7 @@ from detection.card_detector import detect_card
 from validation.colour_validator import detect_card_type
 from validation.ocr_validator import extract_text, keyword_confidence, extract_expiry, is_expired
 from validation.layout_validator import validate_layout
+from comms.arduino_serial import send_result
 
 
 def get_camera():
@@ -121,6 +122,7 @@ def main():
         if card_img is not None:
             results = run_validators(card_img)
             draw_overlay(frame, contour, results)
+            send_result(results["is_valid"])
         else:
             cv2.putText(
                 frame, "No card detected",
