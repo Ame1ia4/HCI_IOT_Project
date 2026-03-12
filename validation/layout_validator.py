@@ -51,81 +51,60 @@ def _dark_pixel_ratio(zone_img, threshold=60):
 #
 # Each rule is a dict:
 #   zone        : (row, col) to inspect
-#   check       : "colour" | "dark"
+#   check       : "colour" | "dark" | "light"
 #   hsv_range   : used when check == "colour"
 #   min_ratio   : minimum pixel fraction required to pass the check
 #   weight      : contribution to the overall layout confidence score
 # ---------------------------------------------------------------------------
 
-# Irish DDAI permit is orange/yellow overall.
-# The wheelchair symbol (dark) typically appears top-left.
-# Text ("DISABLED PARKING") appears across the top half.
-_RULES_IE = [
-    {
-        "description": "Wheelchair symbol (dark) in top-left zone",
-        "zone":        (0, 0),
-        "check":       "dark",
-        "min_ratio":   0.05,
-        "weight":      0.5,
-    },
-    {
-        "description": "Orange background present in top-right zone",
-        "zone":        (0, 2),
-        "check":       "colour",
-        "hsv_range":   CARD_COLOUR_RANGES["parking_permit_ie"],
-        "min_ratio":   0.3,
-        "weight":      0.3,
-    },
-    {
-        "description": "Text/print present in bottom half",
-        "zone":        (1, 1),
-        "check":       "dark",
-        "min_ratio":   0.03,
-        "weight":      0.2,
-    },
-]
+# UL Student Card layout:
+#   Top row  — dark green header band spanning the full width
+#   Bottom-left  — student photo (lighter region)
+#   Bottom-right — printed text (dark pixels on white)
+#
+#   (0,0) green | (0,1) green | (0,2) green
+#   ------------+-------------+------------
+#   (1,0) photo | (1,1) text  | (1,2) text
 
-# EU Parking Card is light blue.
-# The wheelchair symbol appears on the left half; country code text on the right.
-_RULES_EU = [
+_RULES_UL = [
     {
-        "description": "Wheelchair symbol (dark) in top-left zone",
+        "description": "Green header present in top-left zone",
         "zone":        (0, 0),
-        "check":       "dark",
-        "min_ratio":   0.05,
-        "weight":      0.5,
+        "check":       "colour",
+        "hsv_range":   CARD_COLOUR_RANGES["ul_student"],
+        "min_ratio":   0.25,
+        "weight":      0.4,
     },
     {
-        "description": "Blue background present in top-right zone",
+        "description": "Green header present in top-right zone",
         "zone":        (0, 2),
         "check":       "colour",
-        "hsv_range":   CARD_COLOUR_RANGES["parking_permit_eu"],
-        "min_ratio":   0.3,
+        "hsv_range":   CARD_COLOUR_RANGES["ul_student"],
+        "min_ratio":   0.25,
         "weight":      0.3,
     },
     {
-        "description": "Text/print present in bottom half",
-        "zone":        (1, 1),
+        "description": "Printed text present in bottom-right zone",
+        "zone":        (1, 2),
         "check":       "dark",
         "min_ratio":   0.03,
-        "weight":      0.2,
+        "weight":      0.3,
     },
 ]
 
 _LAYOUT_RULES = {
-    "parking_permit_ie": _RULES_IE,
-    "parking_permit_eu": _RULES_EU,
+    "ul_student": _RULES_UL,
 }
 
 
 def validate_layout(card_img, card_type):
     """
-    Check that key design elements (wheelchair symbol, background colour, text)
-    appear in the expected grid zones for the given card type.
+    Check that key design elements appear in the expected grid zones
+    for the given card type.
 
     Args:
       card_img:  BGR image of the cropped, perspective-corrected card.
-      card_type: "parking_permit_ie" or "parking_permit_eu".
+      card_type: "ul_student".
 
     Returns:
       (is_valid: bool, confidence: float 0.0–1.0)

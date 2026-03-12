@@ -2,10 +2,10 @@
 # Camera source
 # Change CAMERA_SOURCE to switch between input devices — nothing else needed.
 # ---------------------------------------------------------------------------
-CAMERA_SOURCE = "esp32"  # "phone" | "esp32"
+CAMERA_SOURCE = "phone"  # "phone" | "esp32"
 
 SOURCES = {
-    "phone": "http://192.168.1.100:8080/video",  # IP Webcam app (Android/iOS)
+    "phone": "http://192.168.0.40:8080/video",  # IP Webcam app (Android/iOS)
     "esp32": "http://192.168.1.105/stream",
 }
 
@@ -42,16 +42,14 @@ VALIDATION_WEIGHTS = {
 # Format: (H_low, H_high, S_low, S_high, V_low, V_high)
 # ---------------------------------------------------------------------------
 CARD_COLOUR_RANGES = {
-    "parking_permit_ie": (15, 35, 150, 255, 150, 255),   # Orange/yellow — DDAI Ireland
-    "parking_permit_eu": (100, 130, 80, 255, 100, 220),  # Light blue — EU standard
+    "ul_student": (140, 170, 80, 255, 30, 160),  # UL dark green — #006B3C approx
 }
 
 # ---------------------------------------------------------------------------
 # OCR keywords for known card types
 # ---------------------------------------------------------------------------
 CARD_KEYWORDS = {
-    "parking_permit_ie": ["Disabled Parking", "DDAI", "Ireland"],
-    "parking_permit_eu": ["Disabled Parking", "Parking Card"],
+    "ul_student": ["University of Limerick", "UL", "Student"],
 }
 
 # ---------------------------------------------------------------------------
