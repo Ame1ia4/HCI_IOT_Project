@@ -6,6 +6,7 @@ from validation.colour_validator import detect_card_type
 from validation.ocr_validator import extract_text, keyword_confidence, extract_expiry, is_expired
 from validation.layout_validator import validate_layout
 from comms.arduino_serial import send_result
+from validation.ml_validator import predict as ml_predict, is_model_available
 
 
 def get_camera():
@@ -24,7 +25,7 @@ def run_validators(card_img):
 
     Returns a dict with keys:
       card_type, colour_conf, text_conf, layout_valid, layout_conf,
-      expired, score, is_valid
+      ml_conf, expired, score, is_valid
     """
     # 1. Colour — also determines which card type we're dealing with
     card_type, colour_conf = detect_card_type(card_img)
@@ -36,6 +37,7 @@ def run_validators(card_img):
             "text_conf":    0.0,
             "layout_valid": False,
             "layout_conf":  0.0,
+            "ml_conf":      0.0,
             "expired":      True,
             "score":        0.0,
             "is_valid":     False,
@@ -50,13 +52,25 @@ def run_validators(card_img):
     # 3. Layout
     layout_valid, layout_conf = validate_layout(card_img, card_type)
 
-    # 4. Weighted score
+    # 4. ML (only when model is available)
+    _, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
+
+    # 5. Weighted score
+    # When ML model is available it contributes 20% and layout drops to 10%.
     w = config.VALIDATION_WEIGHTS
-    score = (
-        colour_conf  * w["colour"] +
-        text_conf    * w["text"]   +
-        layout_conf  * w["layout"]
-    )
+    if is_model_available():
+        score = (
+            colour_conf * w["colour"] +
+            text_conf   * w["text"]   +
+            layout_conf * 0.1         +
+            ml_conf     * 0.2
+        )
+    else:
+        score = (
+            colour_conf * w["colour"] +
+            text_conf   * w["text"]   +
+            layout_conf * w["layout"]
+        )
     score    = round(score, 3)
     is_valid = score >= config.VALIDATION_SCORE_THRESHOLD and not expired
 
@@ -66,6 +80,7 @@ def run_validators(card_img):
         "text_conf":    text_conf,
         "layout_valid": layout_valid,
         "layout_conf":  layout_conf,
+        "ml_conf":      ml_conf,
         "expired":      expired,
         "score":        score,
         "is_valid":     is_valid,
@@ -88,11 +103,12 @@ def draw_overlay(frame, contour, results):
     )
 
     # Debug info in bottom-left corner
+    ml_str = f"ML: {results['ml_conf']:.2f}" if is_model_available() else "ML: n/a"
     debug_lines = [
         f"Type:   {results['card_type'] or 'unknown'}",
         f"Colour: {results['colour_conf']:.2f}  "
         f"Text: {results['text_conf']:.2f}  "
-        f"Layout: {results['layout_conf']:.2f}",
+        f"Layout: {results['layout_conf']:.2f}  {ml_str}",
         f"Score:  {results['score']:.2f}  "
         f"{'EXPIRED' if results['expired'] else 'Not expired'}",
     ]
