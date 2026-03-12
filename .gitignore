@@ -24,6 +24,7 @@ data/invalid/
 .DS_Store
 Thumbs.db
 
+spec.md
 # IDE
 .vscode/
 .idea/
