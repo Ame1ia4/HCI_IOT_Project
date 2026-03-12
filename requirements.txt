@@ -1,0 +1,7 @@
+opencv-python
+numpy
+pytesseract
+pyserial
+tensorflow
+albumentations
+matplotlib
