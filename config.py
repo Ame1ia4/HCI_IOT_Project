@@ -50,7 +50,8 @@ CARD_COLOUR_RANGES = {
 # OCR keywords for known card types
 # ---------------------------------------------------------------------------
 CARD_KEYWORDS = {
-    "parking_permit": ["Disabled Parking", "DDAI", "Ireland"],
+    "parking_permit_ie": ["Disabled Parking", "DDAI", "Ireland"],
+    "parking_permit_eu": ["Disabled Parking", "Parking Card"],
 }
 
 # ---------------------------------------------------------------------------
