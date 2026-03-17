@@ -2,12 +2,45 @@
 # Camera source
 # Change CAMERA_SOURCE to switch between input devices — nothing else needed.
 # ---------------------------------------------------------------------------
-CAMERA_SOURCE = "phone"  # "phone" | "esp32"
+import cv2
+
+CAMERA_SOURCE = "pi" # "phone"  # "phone" | "esp32" | "pi"
 
 SOURCES = {
     "phone": "http://192.168.0.40:8080/video",  # IP Webcam app (Android/iOS)
     "esp32": "http://192.168.1.105/stream",
+    "pi": "/dev/video0" # local camera device
 }
+  
+# ------------------------------------------------------->
+CARD_COLOUR_RANGES = {
+    # UL dark green #006B3C — OpenCV HSV: H≈77, S=255, V=>
+    # H range 55-100 covers lighting variation; V range 2>
+    "ul_student": (55, 100, 80, 255, 20, 160),
+}
+
+# ------------------------------------------------------->
+# OCR keywords for known card types
+# ------------------------------------------------------->
+CARD_KEYWORDS = {
+    "ul_student": ["University of Limerick", "UL", "Student"]
+}
+
+# ------------------------------------------------------->
+# Arduino serial communication
+# ------------------------------------------------------->
+SERIAL_PORT    = "COM3"   # Windows: "COM3" etc. | Linux/>
+SERIAL_BAUD    = 9600
+SERIAL_ENABLED = False    # Set True once Arduino is conn>
+
+# ------------------------------------------------------->
+# IoT HTTP endpoint
+# The CV pipeline POSTs scan results here as JSON.
+# Run server/app.py on the same machine or any device on >
+# ------------------------------------------------------->
+ENDPOINT_ENABLED = True
+ENDPOINT_URL     = "http://127.0.0.1:5000/scan"  # change>
+ENDPOINT_TIMEOUT = 2  # seconds — keeps the camera loop f>
 
 # ---------------------------------------------------------------------------
 # Frame settings
@@ -32,8 +65,7 @@ CANNY_THRESHOLD_HIGH = 100
 VALIDATION_SCORE_THRESHOLD = 0.65  # minimum weighted score to call VALID
 
 VALIDATION_WEIGHTS = {
-    "colour": 0.4,  # colour of green band — very reliable
-    "text":   0.3,  # OCR keywords — less reliable on laminated cards under camera
+    "colour": 0.4,  # colour of green band — very reliable    "text":   0.3,  # OCR keywords — less reliable on laminated cards under camera
     "layout": 0.3,  # layout zone checks — very reliable
 }
 
@@ -41,31 +73,4 @@ VALIDATION_WEIGHTS = {
 # HSV colour ranges for known card types
 # Format: (H_low, H_high, S_low, S_high, V_low, V_high)
 # ---------------------------------------------------------------------------
-CARD_COLOUR_RANGES = {
-    # UL dark green #006B3C — OpenCV HSV: H≈77, S=255, V=107
-    # H range 55-100 covers lighting variation; V range 20-160 covers dim/bright
-    "ul_student": (55, 100, 80, 255, 20, 160),
-}
 
-# ---------------------------------------------------------------------------
-# OCR keywords for known card types
-# ---------------------------------------------------------------------------
-CARD_KEYWORDS = {
-    "ul_student": ["University of Limerick", "UL", "Student", "University"],
-}
-
-# ---------------------------------------------------------------------------
-# Arduino serial communication
-# ---------------------------------------------------------------------------
-SERIAL_PORT    = "COM3"   # Windows: "COM3" etc. | Linux/Mac: "/dev/ttyUSB0"
-SERIAL_BAUD    = 9600
-SERIAL_ENABLED = False    # Set True once Arduino is connected
-
-# ---------------------------------------------------------------------------
-# IoT HTTP endpoint
-# The CV pipeline POSTs scan results here as JSON.
-# Run server/app.py on the same machine or any device on the network.
-# ---------------------------------------------------------------------------
-ENDPOINT_ENABLED = True
-ENDPOINT_URL     = "http://127.0.0.1:5000/scan"  # change host if server is on another device
-ENDPOINT_TIMEOUT = 2  # seconds — keeps the camera loop from stalling
