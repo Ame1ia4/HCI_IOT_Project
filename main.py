@@ -8,6 +8,9 @@ from validation.layout_validator import validate_layout
 from comms.arduino_serial import send_result
 from comms.http_client import post_result
 from validation.ml_validator import predict as ml_predict, is_model_available
+from comms.led import green_on
+from comms.buzzer import beep
+import threading
 
 from picamera2 import Picamera2
 
@@ -192,6 +195,9 @@ def main():
 
                 send_result(last_results["is_valid"])
                 post_result(last_results)
+                if last_results["is_valid"]:
+                    threading.Thread(target=green_on).start()
+                    threading.Thread(target=beep).start()
 
             draw_overlay(frame, contour, last_results)
 
