@@ -35,6 +35,7 @@ def extract_text(card_img):
       Raw OCR string (may contain noise — use validate_text to interpret it).
     """
     processed = preprocess_for_ocr(card_img)
+    processed = cv2.cvtColor(processed, cv2.COLOR_GRAY2RGB)
     text = pytesseract.image_to_string(
         processed,
         config="--psm 11",  # sparse text — handles mixed layouts (name + green band + ID)
