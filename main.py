@@ -205,7 +205,8 @@ def main():
             log_scan(True)
             threading.Thread(target=green_on).start()
             threading.Thread(target=trigger_buzzer).start()
-            already_triggered = True
+            already_triggered    = True
+            validation_attempts  = 0
         if not results["is_valid"]:
             already_triggered = False
         validator_running = False
