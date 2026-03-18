@@ -1,7 +1,10 @@
 import threading
 
 import cv2
-from picamera2 import Picamera2
+try:
+    from picamera2 import Picamera2
+except ImportError:
+    Picamera2 = None
 
 import config
 from detection.card_detector import detect_card
@@ -9,6 +12,7 @@ from validation.colour_validator import detect_card_type
 from validation.ocr_validator import extract_text, keyword_confidence, extract_student_number, has_name, extract_name
 from validation.supabase_validator import lookup_student
 from validation.layout_validator import validate_layout
+from validation.ml_validator import predict as ml_predict, is_model_available
 from comms.arduino_serial import send_result
 from comms.http_client import post_result
 from comms.blink import green_on
@@ -74,12 +78,16 @@ def run_validators(card_img):
     # 4. Layout
     layout_valid, layout_conf = validate_layout(card_img, card_type)
 
-    # 5. Weighted score
+    # 5. ORB feature matching (only used if reference image is available)
+    ml_valid, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
+
+    # 6. Weighted score
     w = config.VALIDATION_WEIGHTS
     score = round(
         colour_conf * w["colour"] +
         text_conf   * w["text"]   +
-        layout_conf * w["layout"],
+        layout_conf * w["layout"] +
+        ml_conf     * w["ml"],
         3,
     )
 
@@ -91,6 +99,7 @@ def run_validators(card_img):
         "text_conf":      text_conf,
         "layout_valid":   layout_valid,
         "layout_conf":    layout_conf,
+        "ml_conf":        ml_conf,
         "student_number": student_number,
         "name_found":     name_found,
         "name":           name,

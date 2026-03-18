@@ -54,11 +54,10 @@ def lookup_student(student_id):
             client.table("students")
             .select("name")
             .eq("student_id", student_id)
-            .single()
             .execute()
         )
         if result.data:
-            return True, result.data.get("name")
+            return True, result.data[0].get("name")
         return False, None
     except Exception as e:
         print(f"[Supabase] Lookup failed for ID {student_id}: {e}")
