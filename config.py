@@ -23,20 +23,20 @@ FRAME_HEIGHT = 480
 # ---------------------------------------------------------------------------
 CARD_ASPECT_RATIO    = 1.585  # ISO/IEC 7810 ID-1: 85.6mm x 54mm
 ASPECT_RATIO_TOL     = 0.3   # ± tolerance — loosened for real-world camera angles
-MIN_CARD_AREA        = 5000  # minimum contour area in pixels
+MIN_CARD_AREA        = 8000  # minimum contour area in pixels
 CANNY_THRESHOLD_LOW  = 30
 CANNY_THRESHOLD_HIGH = 100
 
 # ---------------------------------------------------------------------------
 # Validation thresholds
 # ---------------------------------------------------------------------------
-VALIDATION_SCORE_THRESHOLD = 0.65  # minimum weighted score to call VALID
+VALIDATION_SCORE_THRESHOLD = 0.55  # minimum weighted score to call VALID
 
 VALIDATION_WEIGHTS = {
-    "colour": 0.35,  # colour of green band — very reliable
+    "colour": 0.40,  # colour of green band — very reliable
     "text":   0.20,  # OCR keywords — less reliable on laminated cards under camera
-    "layout": 0.25,  # layout zone checks — very reliable
-    "ml":     0.20,  # ORB feature matching — falls back to 0 if no reference image
+    "layout": 0.30,  # layout zone checks — very reliable
+    "ml":     0.10,  # ORB feature matching — falls back to 0 if no reference image
 }
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ CARD_COLOUR_RANGES = {
     # UL dark green #006B3C — OpenCV HSV: H≈77, S=255, V=107
     # H range 50-105 covers lighting variation; S lowered to 50 to handle
     # camera desaturation; V range 10-200 handles dim and bright/reflective lighting
-    "ul_student": (50, 105, 50, 255, 10, 200),
+    "ul_student": (40, 110, 30, 255, 5, 220),
 }
 
 # ---------------------------------------------------------------------------

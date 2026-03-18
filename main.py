@@ -1,6 +1,7 @@
 import threading
 
 import cv2
+import numpy as np
 try:
     from picamera2 import Picamera2
 except ImportError:
@@ -73,15 +74,25 @@ def run_validators(card_img):
     # 4. ORB feature matching (only used if reference image is available)
     ml_valid, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
 
-    # 5. Weighted score
+    # 5. Weighted score — exclude ML weight if no reference images are loaded
     w = config.VALIDATION_WEIGHTS
-    score = round(
-        colour_conf * w["colour"] +
-        text_conf   * w["text"]   +
-        layout_conf * w["layout"] +
-        ml_conf     * w["ml"],
-        3,
-    )
+    if is_model_available():
+        score = round(
+            colour_conf * w["colour"] +
+            text_conf   * w["text"]   +
+            layout_conf * w["layout"] +
+            ml_conf     * w["ml"],
+            3,
+        )
+    else:
+        # Redistribute ML weight proportionally across the other three
+        total = w["colour"] + w["text"] + w["layout"]
+        score = round(
+            colour_conf * (w["colour"] / total) +
+            text_conf   * (w["text"]   / total) +
+            layout_conf * (w["layout"] / total),
+            3,
+        )
 
     is_valid = score >= config.VALIDATION_SCORE_THRESHOLD
 
@@ -146,11 +157,11 @@ def main():
     last_results      = None
     ocr_frame         = 0
     already_triggered = False
+    validator_running = False
 
     COAST_FRAMES = 20
     OCR_INTERVAL = 8
 
-    already_triggered = False
     buzzer_active = False
 
     def trigger_buzzer():
@@ -159,6 +170,21 @@ def main():
             buzzer_active = True
             beep()
             buzzer_active = False
+
+    def run_validators_async(card_img):
+        nonlocal last_results, validator_running, already_triggered
+        results = run_validators(card_img)
+        send_result(results["is_valid"])
+        post_result(results)
+        last_results = results
+        if results["is_valid"] and not already_triggered:
+            log_scan(True)
+            threading.Thread(target=green_on).start()
+            threading.Thread(target=trigger_buzzer).start()
+            already_triggered = True
+        if not results["is_valid"]:
+            already_triggered = False
+        validator_running = False
 
     while True:
         if config.CAMERA_SOURCE == "pi":
@@ -171,7 +197,21 @@ def main():
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
-        card_img, contour, edges = detect_card(frame, debug=True)
+        # Draw guide box so the user knows where to hold the card
+        fw, fh = config.FRAME_WIDTH, config.FRAME_HEIGHT
+        roi_x1 = fw // 8
+        roi_y1 = fh // 6
+        roi_x2 = fw - fw // 8
+        roi_y2 = fh - fh // 6
+        cv2.rectangle(frame, (roi_x1, roi_y1), (roi_x2, roi_y2), (180, 180, 180), 2)
+
+        # Crop to ROI before detection to eliminate background noise
+        roi = frame[roi_y1:roi_y2, roi_x1:roi_x2]
+        card_img, contour, edges = detect_card(roi, debug=True)
+
+        # Shift contour coordinates back to full-frame space for overlay
+        if contour is not None:
+            contour = contour + np.array([roi_x1, roi_y1])
 
         if card_img is not None:
             last_card    = card_img
@@ -185,21 +225,12 @@ def main():
 
         if card_img is not None:
             ocr_frame += 1
-            if last_results is None or ocr_frame % OCR_INTERVAL == 0:
-                last_results = run_validators(card_img)
-                send_result(last_results["is_valid"])
-                post_result(last_results)
-                log_scan(last_results["is_valid"])
+            if not validator_running and (last_results is None or ocr_frame % OCR_INTERVAL == 0):
+                validator_running = True
+                threading.Thread(target=run_validators_async, args=(card_img,), daemon=True).start()
 
-                if last_results["is_valid"] and not already_triggered:
-                    threading.Thread(target=green_on).start()
-                    threading.Thread(target=trigger_buzzer).start()
-                    already_triggered = True
-
-                if not last_results["is_valid"]:
-                    already_triggered = False
-
-            draw_overlay(frame, contour, last_results)
+            if last_results is not None:
+                draw_overlay(frame, contour, last_results)
             if debug:
                 cv2.imshow("Warped Card", card_img)
         else:
