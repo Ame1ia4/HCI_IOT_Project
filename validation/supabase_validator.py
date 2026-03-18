@@ -46,6 +46,11 @@ def log_scan(is_valid):
         return
 
     try:
-        client.table("scans").insert({"is_valid": is_valid}).execute()
+        from datetime import datetime, timezone
+        timestamp = datetime.now(timezone.utc).isoformat()
+        client.table("scans").insert({
+            "is_valid":   is_valid,
+            "created_at": timestamp,
+        }).execute()
     except Exception as e:
         print(f"[Supabase] Failed to log scan: {e}")
