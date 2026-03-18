@@ -1,4 +1,7 @@
+import threading
+
 import cv2
+from picamera2 import Picamera2
 
 import config
 from detection.card_detector import detect_card
@@ -8,11 +11,21 @@ from validation.supabase_validator import lookup_student
 from validation.layout_validator import validate_layout
 from comms.arduino_serial import send_result
 from comms.http_client import post_result
+from comms.blink import green_on
+from comms.buzzer import beep
 
+
+# ---------------- CAMERA ---------------- #
 
 def get_camera():
+    if config.CAMERA_SOURCE == "pi":
+        cam = Picamera2()
+        cam.start()
+        cam.set_controls({"AfMode": 2})
+        return cam
+
     source = config.SOURCES[config.CAMERA_SOURCE]
-    cap    = cv2.VideoCapture(source)
+    cap = cv2.VideoCapture(source)
     if not cap.isOpened():
         raise RuntimeError(
             f"Could not open camera source '{config.CAMERA_SOURCE}': {source}"
@@ -20,13 +33,15 @@ def get_camera():
     return cap
 
 
+# ---------------- VALIDATION ---------------- #
+
 def run_validators(card_img):
     """
-    Run all three rule-based validators against the cropped card image.
+    Run all validators against the cropped card image.
 
     Returns a dict with keys:
       card_type, colour_conf, text_conf, layout_valid, layout_conf,
-      student_number, name_found, score, is_valid
+      student_number, name_found, name, db_found, score, is_valid
     """
     # 1. Colour — also determines which card type we're dealing with
     card_type, colour_conf = detect_card_type(card_img)
@@ -52,21 +67,21 @@ def run_validators(card_img):
     student_number = extract_student_number(text, card_img)
     name_found     = has_name(text)
 
-    # 3a. Supabase lookup — use DB name if available, fall back to OCR
+    # 3. Supabase lookup — use DB name if available, fall back to OCR
     db_found, db_name = lookup_student(student_number)
     name = db_name if db_found else extract_name(text, card_img)
 
-    # 3. Layout  (was 3a above for Supabase)
+    # 4. Layout
     layout_valid, layout_conf = validate_layout(card_img, card_type)
 
-    # 4. Weighted score
+    # 5. Weighted score
     w = config.VALIDATION_WEIGHTS
-    score = (
+    score = round(
         colour_conf * w["colour"] +
         text_conf   * w["text"]   +
-        layout_conf * w["layout"]
+        layout_conf * w["layout"],
+        3,
     )
-    score = round(score, 3)
 
     is_valid = score >= config.VALIDATION_SCORE_THRESHOLD
 
@@ -85,8 +100,9 @@ def run_validators(card_img):
     }
 
 
+# ---------------- OVERLAY ---------------- #
+
 def draw_overlay(frame, contour, results):
-    """Draw bounding box and VALID/INVALID label onto the frame in-place."""
     colour = (0, 200, 0) if results["is_valid"] else (0, 0, 220)
     label  = "VALID" if results["is_valid"] else "INVALID"
 
@@ -100,7 +116,6 @@ def draw_overlay(frame, contour, results):
         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2,
     )
 
-    # Debug info in bottom-left corner
     id_str   = f"ID: {results['student_number']}" if results["student_number"] else "ID: not found"
     src      = "(DB)" if results["db_found"] else "(OCR)"
     name_str = f"Name: {results['name']} {src}" if results["name"] else "Name: not found"
@@ -112,6 +127,7 @@ def draw_overlay(frame, contour, results):
         f"Score:  {results['score']:.2f}  {id_str}",
         name_str,
     ]
+
     fh = frame.shape[0]
     for i, line in enumerate(debug_lines):
         cv2.putText(
@@ -121,33 +137,36 @@ def draw_overlay(frame, contour, results):
         )
 
 
+# ---------------- MAIN ---------------- #
+
 def main():
     cap = get_camera()
     print(f"Camera source: {config.CAMERA_SOURCE} — press Q to quit, D to toggle debug view")
 
-    debug        = False
-    last_card    = None   # last successfully warped card image
-    last_contour = None
-    no_detect    = 0      # consecutive frames without detection
-    last_results = None   # cached validator output
-    ocr_frame    = 0      # counts frames since last OCR run
+    debug             = False
+    last_card         = None
+    last_contour      = None
+    no_detect         = 0
+    last_results      = None
+    ocr_frame         = 0
+    already_triggered = False
 
-    COAST_FRAMES = 20   # keep last card for up to N frames when detection drops out
-    OCR_INTERVAL = 8    # re-run validators every N frames (OCR is slow)
+    COAST_FRAMES = 20
+    OCR_INTERVAL = 8
 
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Failed to read frame — check camera connection")
-            break
+        if config.CAMERA_SOURCE == "pi":
+            frame = cap.capture_array()
+        else:
+            ret, frame = cap.read()
+            if not ret:
+                print("Failed to read frame — check camera connection")
+                break
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
         card_img, contour, edges = detect_card(frame, debug=True)
 
-        # --- Detection coasting -------------------------------------------
-        # Keep the last known card for a short window so the result doesn't
-        # flicker when the detector briefly loses the card between frames.
         if card_img is not None:
             last_card    = card_img
             last_contour = contour
@@ -159,12 +178,19 @@ def main():
                 contour  = last_contour
 
         if card_img is not None:
-            # Re-run validators only every OCR_INTERVAL frames
             ocr_frame += 1
             if last_results is None or ocr_frame % OCR_INTERVAL == 0:
                 last_results = run_validators(card_img)
                 send_result(last_results["is_valid"])
                 post_result(last_results)
+
+                if last_results["is_valid"] and not already_triggered:
+                    threading.Thread(target=green_on).start()
+                    threading.Thread(target=beep).start()
+                    already_triggered = True
+
+                if not last_results["is_valid"]:
+                    already_triggered = False
 
             draw_overlay(frame, contour, last_results)
             if debug:
@@ -178,7 +204,8 @@ def main():
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2,
             )
 
-        cv2.imshow("Disability Card Validator", frame)
+        display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        cv2.imshow("Disability Card Validator", display_frame)
 
         if debug:
             cv2.imshow("Canny Edges", edges)
@@ -196,7 +223,8 @@ def main():
             debug = not debug
             print(f"Debug mode {'ON' if debug else 'OFF'}")
 
-    cap.release()
+    if config.CAMERA_SOURCE != "pi":
+        cap.release()
     cv2.destroyAllWindows()
 
 

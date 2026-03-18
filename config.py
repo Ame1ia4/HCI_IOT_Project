@@ -2,11 +2,12 @@
 # Camera source
 # Change CAMERA_SOURCE to switch between input devices — nothing else needed.
 # ---------------------------------------------------------------------------
-CAMERA_SOURCE = "phone"  # "phone" | "esp32"
+CAMERA_SOURCE = "phone"  # "phone" | "esp32" | "pi"
 
 SOURCES = {
     "phone": "http://10.54.148.17:8080/video",  # IP Webcam app (Android/iOS)
     "esp32": "http://192.168.1.105/stream",
+    "pi":    "/dev/video0",                      # local Pi camera device
 }
 
 # ---------------------------------------------------------------------------
