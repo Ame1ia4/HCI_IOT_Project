@@ -74,9 +74,8 @@ _DASHBOARD = """
       <span>Colour: {{ '%.2f' % latest.colour_conf }}</span>
       <span>Text: {{ '%.2f' % latest.text_conf }}</span>
       <span>Layout: {{ '%.2f' % latest.layout_conf }}</span>
-      <span>ML: {{ '%.2f' % latest.ml_conf }}</span>
       <span>ID: <strong>{{ latest.student_number or 'not found' }}</strong></span>
-      <span>Name: {{ 'yes' if latest.name_found else 'no' }}</span>
+      <span>Name: <strong>{{ latest.name or 'not found' }}</strong>{% if latest.name %} {{ '(DB)' if latest.db_found else '(OCR)' }}{% endif %}</span>
       <br><small style="color:#666">{{ latest.timestamp }}</small>
     </div>
   {% else %}
@@ -88,8 +87,8 @@ _DASHBOARD = """
   <table>
     <tr>
       <th>Time</th><th>Result</th><th>Card Type</th>
-      <th>Score</th><th>Colour</th><th>Text</th><th>Layout</th><th>ML</th>
-      <th>Student ID</th><th>Name</th>
+      <th>Score</th><th>Colour</th><th>Text</th><th>Layout</th>
+      <th>Student ID</th><th>Name</th><th>Source</th>
     </tr>
     {% for s in log %}
     <tr class="{{ 'v' if s.is_valid else 'i' }}">
@@ -100,9 +99,9 @@ _DASHBOARD = """
       <td>{{ '%.2f' % s.colour_conf }}</td>
       <td>{{ '%.2f' % s.text_conf }}</td>
       <td>{{ '%.2f' % s.layout_conf }}</td>
-      <td>{{ '%.2f' % s.ml_conf }}</td>
       <td>{{ s.student_number or '—' }}</td>
-      <td>{{ 'Yes' if s.name_found else 'No' }}</td>
+      <td>{{ s.name or '—' }}</td>
+      <td>{{ 'DB' if s.db_found else ('OCR' if s.name else '—') }}</td>
     </tr>
     {% endfor %}
   </table>
