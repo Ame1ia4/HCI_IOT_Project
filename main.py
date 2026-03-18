@@ -32,18 +32,16 @@ def get_camera():
 
         cam = Picamera2()
 
-        # ✅ LOWER RESOLUTION = BIG FPS BOOST
         config_ = cam.create_preview_configuration(
             main={"size": (320, 240), "format": "RGB888"}
         )
         cam.configure(config_)
         cam.start()
 
-        # ✅ STABLE COLOUR (no drifting / blue tint)
+        # ✅ LET CAMERA HANDLE COLOUR PROPERLY
         cam.set_controls({
             "AfMode": 2,
-            "AwbEnable": False,
-            "ColourGains": (1.6, 1.2),
+            "AwbEnable": True,   # 🔥 CRITICAL FIX
         })
 
         return cam
@@ -123,11 +121,8 @@ def main():
     cap = get_camera()
 
     frame_count = 0
+    FRAME_SKIP = 3   # balanced
 
-    # ✅ LESS WORK PER FRAME
-    FRAME_SKIP = 4
-
-    debug = False
     last_card = None
     last_contour = None
     no_detect = 0
@@ -136,22 +131,17 @@ def main():
     already_triggered = False
 
     COAST_FRAMES = 20
-
-    # ✅ OCR MUCH LESS FREQUENT
-    OCR_INTERVAL = 15
-
-    buzzer_active = False
+    OCR_INTERVAL = 12
 
     def trigger_buzzer():
-        nonlocal buzzer_active
-        if not buzzer_active:
-            buzzer_active = True
-            beep()
-            buzzer_active = False
+        beep()
 
     while True:
         if config.CAMERA_SOURCE == "pi":
-            frame = cap.capture_array()  # ✅ KEEP RAW (no conversion)
+            frame = cap.capture_array()
+
+            # ✅ FIX COLOUR ONCE
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         else:
             ret, frame = cap.read()
@@ -164,19 +154,15 @@ def main():
         if frame_count % FRAME_SKIP != 0:
             continue
 
-        # ✅ Resize once
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
-        # ✅ Smaller image for detection (faster)
-        small = cv2.resize(frame, (320, 240))
-
-        result = detect_card(small, debug=False)
+        # ✅ DETECT ON SAME FRAME (no mismatch)
+        result = detect_card(frame, debug=False)
 
         if len(result) == 3:
             card_img, contour, edges = result
         else:
             card_img, contour = result
-            edges = None
 
         if card_img is not None:
             last_card = card_img
@@ -196,7 +182,6 @@ def main():
 
                 send_result(last_results["is_valid"])
 
-                # ✅ NON-BLOCKING HTTP
                 threading.Thread(
                     target=post_result,
                     args=(last_results,),
@@ -229,14 +214,10 @@ def main():
                 2
             )
 
-        # ✅ NO COLOR CONVERSION (fix blue issue)
         cv2.imshow("Validator", frame)
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
+        if cv2.waitKey(1) & 0xFF == ord("q"):
             break
-        if key == ord("d"):
-            debug = not debug
 
     if config.CAMERA_SOURCE != "pi":
         cap.release()
