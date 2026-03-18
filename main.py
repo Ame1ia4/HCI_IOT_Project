@@ -79,7 +79,6 @@ def run_validators(card_img):
     text_conf = keyword_confidence(text, card_type)
     student_number = extract_student_number(text, card_img)
     name_found = has_name(text)
-
     name = extract_name(text, card_img)
 
     layout_valid, layout_conf = validate_layout(card_img, card_type)
@@ -116,7 +115,6 @@ def main():
     frame_count = 0
     FRAME_SKIP = 2
 
-    debug = False
     last_card = None
     last_contour = None
     no_detect = 0
@@ -138,7 +136,8 @@ def main():
 
     while True:
         if config.CAMERA_SOURCE == "pi":
-            frame = cap.capture_array()   # ✅ NO colour conversion here
+            frame = cap.capture_array()
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # ✅ ONLY HERE
 
         else:
             ret, frame = cap.read()
@@ -146,6 +145,7 @@ def main():
                 cap.release()
                 cap = get_camera()
                 continue
+            # ❌ NO conversion here
 
         frame_count += 1
         if frame_count % FRAME_SKIP != 0:
@@ -159,7 +159,6 @@ def main():
             card_img, contour, edges = result
         else:
             card_img, contour = result
-            edges = None
 
         if card_img is not None:
             last_card = card_img
@@ -203,15 +202,11 @@ def main():
                 (100, 100, 100), 2
             )
 
-        # ✅ ONLY convert for display (this fixes blue tint)
-        display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        cv2.imshow("Validator", display_frame)
+        # ✅ NO conversion here anymore
+        cv2.imshow("Validator", frame)
 
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
+        if cv2.waitKey(1) & 0xFF == ord("q"):
             break
-        if key == ord("d"):
-            debug = not debug
 
     if config.CAMERA_SOURCE != "pi":
         cap.release()
