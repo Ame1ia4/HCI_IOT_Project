@@ -43,8 +43,9 @@ VALIDATION_WEIGHTS = {
 # ---------------------------------------------------------------------------
 CARD_COLOUR_RANGES = {
     # UL dark green #006B3C — OpenCV HSV: H≈77, S=255, V=107
-    # H range 55-100 covers lighting variation; V range 20-160 covers dim/bright
-    "ul_student": (55, 100, 80, 255, 20, 160),
+    # H range 50-105 covers lighting variation; S lowered to 50 to handle
+    # camera desaturation; V range 10-200 handles dim and bright/reflective lighting
+    "ul_student": (50, 105, 50, 255, 10, 200),
 }
 
 # ---------------------------------------------------------------------------

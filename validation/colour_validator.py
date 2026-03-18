@@ -29,14 +29,14 @@ def validate_colour(card_img, card_type):
 
     # Sample the middle third of the card where the UL green band sits
     # (top third = name/photo, middle = green band, bottom = ID number)
-    card_h   = card_img.shape[0]
-    top_band = card_img[int(card_h * 0.30):int(card_h * 0.70), :]
+    card_h    = card_img.shape[0]
+    green_band = card_img[int(card_h * 0.30):int(card_h * 0.70), :]
 
-    hsv  = cv2.cvtColor(top_band, cv2.COLOR_BGR2HSV)
+    hsv  = cv2.cvtColor(green_band, cv2.COLOR_BGR2HSV)
     mask = cv2.inRange(hsv, lower, upper)
     ratio = float(np.count_nonzero(mask)) / mask.size
 
-    if ratio < 0.15:  # need at least 15% matching pixels in the header band
+    if ratio < 0.08:  # need at least 8% matching pixels in the green band
         return False, 0.0
 
     # Scale ratio to a 0–1 confidence (saturates at ~50% coverage)
