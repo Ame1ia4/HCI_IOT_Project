@@ -36,12 +36,17 @@ def get_camera():
         cam.configure(config_)
         cam.start()
 
-        # 🔥 FIX: proper colour + white balance tuning
+        # 🔥 FINAL FIX: disable AWB + force correct colour
         cam.set_controls({
             "AfMode": 2,
-            "AwbEnable": True,
-            "AwbMode": 1,
-            "ColourGains": (1.8, 1.1),   # ✅ fixes blue tint
+
+            # ❌ TURN OFF auto white balance
+            "AwbEnable": False,
+
+            # 🔥 MANUAL GAINS (fix blue tint)
+            "ColourGains": (2.5, 0.8),
+
+            # Optional tuning
             "Brightness": 0.05,
             "Contrast": 1.1,
             "Saturation": 1.2
@@ -144,7 +149,7 @@ def main():
     while True:
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # ✅ correct conversion
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         else:
             ret, frame = cap.read()
