@@ -10,9 +10,13 @@ except ImportError:
 
 BuzzerPin = 4
 
-def beep(duration=5):
-    if not _GPIO_AVAILABLE:
-        return
-    GPIO.output(BuzzerPin, GPIO.HIGH)
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(BuzzerPin, GPIO.OUT)
+
+#nice tone
+pwm = GPIO.PWM(BuzzerPin, 1000)
+
+def beep(duration=0.3):
+    pwm.start(50)  # 50% duty cycle
     time.sleep(duration)
-    GPIO.output(BuzzerPin, GPIO.LOW)
+    pwm.stop()

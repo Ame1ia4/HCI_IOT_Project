@@ -17,7 +17,8 @@ from comms.arduino_serial import send_result
 from comms.http_client import post_result
 from comms.blink import green_on
 from comms.buzzer import beep
-
+import threading
+from picamera2 import Picamera2
 
 # ---------------- CAMERA ---------------- #
 
@@ -163,6 +164,16 @@ def main():
     COAST_FRAMES = 20
     OCR_INTERVAL = 8
 
+    already_triggered = False
+    buzzer_active = False
+
+    def trigger_buzzer():
+        nonlocal buzzer_active
+        if not buzzer_active:
+            buzzer_active = True
+            beep()
+            buzzer_active = False
+
     while True:
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
@@ -195,7 +206,7 @@ def main():
 
                 if last_results["is_valid"] and not already_triggered:
                     threading.Thread(target=green_on).start()
-                    threading.Thread(target=beep).start()
+                    threading.Thread(target=trigger_buzzer).start()
                     already_triggered = True
 
                 if not last_results["is_valid"]:
