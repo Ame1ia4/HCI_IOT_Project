@@ -2,6 +2,7 @@ import threading
 
 import cv2
 import numpy as np
+
 try:
     from picamera2 import Picamera2
 except ImportError:
@@ -19,21 +20,29 @@ from comms.http_client import post_result
 from comms.blink import green_on
 from comms.buzzer import beep
 
+
 # ---------------- CAMERA ---------------- #
 
 def get_camera():
     if config.CAMERA_SOURCE == "pi":
+        if Picamera2 is None:
+            raise RuntimeError("Picamera2 not installed")
         cam = Picamera2()
+        cfg = cam.create_preview_configuration(
+            main={"size": (640, 480), "format": "RGB888"}
+        )
+        cam.configure(cfg)
         cam.start()
-        cam.set_controls({"AfMode": 2})
+        try:
+            cam.set_controls({"AfMode": 2, "AfTrigger": 0})
+        except Exception:
+            pass
         return cam
 
     source = config.SOURCES[config.CAMERA_SOURCE]
     cap = cv2.VideoCapture(source)
     if not cap.isOpened():
-        raise RuntimeError(
-            f"Could not open camera source '{config.CAMERA_SOURCE}': {source}"
-        )
+        raise RuntimeError(f"Could not open camera source '{config.CAMERA_SOURCE}': {source}")
     return cap
 
 
@@ -47,7 +56,6 @@ def run_validators(card_img):
       card_type, colour_conf, text_conf, layout_valid, layout_conf,
       student_number, ml_conf, score, is_valid
     """
-    # 1. Colour — also determines which card type we're dealing with
     card_type, colour_conf = detect_card_type(card_img)
 
     if card_type is None:
@@ -63,18 +71,14 @@ def run_validators(card_img):
             "is_valid":       False,
         }
 
-    # 2. OCR
     text           = extract_text(card_img)
     text_conf      = keyword_confidence(text, card_type)
     student_number = extract_student_number(text, card_img)
 
-    # 3. Layout
     layout_valid, layout_conf = validate_layout(card_img, card_type)
 
-    # 4. ORB feature matching (only used if reference image is available)
     ml_valid, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
 
-    # 5. Weighted score — exclude ML weight if no reference images are loaded
     w = config.VALIDATION_WEIGHTS
     if is_model_available():
         score = round(
@@ -85,7 +89,6 @@ def run_validators(card_img):
             3,
         )
     else:
-        # Redistribute ML weight proportionally across the other three
         total = w["colour"] + w["text"] + w["layout"]
         score = round(
             colour_conf * (w["colour"] / total) +
@@ -189,6 +192,7 @@ def main():
     while True:
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         else:
             ret, frame = cap.read()
             if not ret:
@@ -242,8 +246,7 @@ def main():
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2,
             )
 
-        display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        cv2.imshow("Disability Card Validator", display_frame)
+        cv2.imshow("Disability Card Validator", frame)
 
         if debug:
             cv2.imshow("Canny Edges", edges)
