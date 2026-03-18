@@ -3,11 +3,11 @@ import cv2
 import config
 from detection.card_detector import detect_card
 from validation.colour_validator import detect_card_type
-from validation.ocr_validator import extract_text, keyword_confidence, extract_student_number, has_name
+from validation.ocr_validator import extract_text, keyword_confidence, extract_student_number, has_name, extract_name
+from validation.supabase_validator import lookup_student
 from validation.layout_validator import validate_layout
 from comms.arduino_serial import send_result
 from comms.http_client import post_result
-from validation.ml_validator import predict as ml_predict, is_model_available
 
 
 def get_camera():
@@ -26,7 +26,7 @@ def run_validators(card_img):
 
     Returns a dict with keys:
       card_type, colour_conf, text_conf, layout_valid, layout_conf,
-      ml_conf, student_number, name_found, score, is_valid
+      student_number, name_found, score, is_valid
     """
     # 1. Colour — also determines which card type we're dealing with
     card_type, colour_conf = detect_card_type(card_img)
@@ -38,9 +38,10 @@ def run_validators(card_img):
             "text_conf":      0.0,
             "layout_valid":   False,
             "layout_conf":    0.0,
-            "ml_conf":        0.0,
             "student_number": None,
             "name_found":     False,
+            "name":           None,
+            "db_found":       False,
             "score":          0.0,
             "is_valid":       False,
         }
@@ -48,31 +49,23 @@ def run_validators(card_img):
     # 2. OCR
     text           = extract_text(card_img)
     text_conf      = keyword_confidence(text, card_type)
-    student_number = extract_student_number(text)
+    student_number = extract_student_number(text, card_img)
     name_found     = has_name(text)
 
-    # 3. Layout
+    # 3a. Supabase lookup — use DB name if available, fall back to OCR
+    db_found, db_name = lookup_student(student_number)
+    name = db_name if db_found else extract_name(text, card_img)
+
+    # 3. Layout  (was 3a above for Supabase)
     layout_valid, layout_conf = validate_layout(card_img, card_type)
 
-    # 4. ML (only when model is available)
-    _, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
-
-    # 5. Weighted score
-    # When ML model is available it contributes 20% and layout drops to 10%.
+    # 4. Weighted score
     w = config.VALIDATION_WEIGHTS
-    if is_model_available():
-        score = (
-            colour_conf * w["colour"] +
-            text_conf   * w["text"]   +
-            layout_conf * 0.1         +
-            ml_conf     * 0.2
-        )
-    else:
-        score = (
-            colour_conf * w["colour"] +
-            text_conf   * w["text"]   +
-            layout_conf * w["layout"]
-        )
+    score = (
+        colour_conf * w["colour"] +
+        text_conf   * w["text"]   +
+        layout_conf * w["layout"]
+    )
     score = round(score, 3)
 
     is_valid = score >= config.VALIDATION_SCORE_THRESHOLD
@@ -83,9 +76,10 @@ def run_validators(card_img):
         "text_conf":      text_conf,
         "layout_valid":   layout_valid,
         "layout_conf":    layout_conf,
-        "ml_conf":        ml_conf,
         "student_number": student_number,
         "name_found":     name_found,
+        "name":           name,
+        "db_found":       db_found,
         "score":          score,
         "is_valid":       is_valid,
     }
@@ -107,15 +101,16 @@ def draw_overlay(frame, contour, results):
     )
 
     # Debug info in bottom-left corner
-    ml_str  = f"ML: {results['ml_conf']:.2f}" if is_model_available() else "ML: n/a"
-    id_str  = f"ID: {results['student_number']}" if results["student_number"] else "ID: not found"
-    name_str = "Name: yes" if results["name_found"] else "Name: no"
+    id_str   = f"ID: {results['student_number']}" if results["student_number"] else "ID: not found"
+    src      = "(DB)" if results["db_found"] else "(OCR)"
+    name_str = f"Name: {results['name']} {src}" if results["name"] else "Name: not found"
     debug_lines = [
         f"Type:   {results['card_type'] or 'unknown'}",
         f"Colour: {results['colour_conf']:.2f}  "
         f"Text: {results['text_conf']:.2f}  "
-        f"Layout: {results['layout_conf']:.2f}  {ml_str}",
-        f"Score:  {results['score']:.2f}  {id_str}  {name_str}",
+        f"Layout: {results['layout_conf']:.2f}",
+        f"Score:  {results['score']:.2f}  {id_str}",
+        name_str,
     ]
     fh = frame.shape[0]
     for i, line in enumerate(debug_lines):

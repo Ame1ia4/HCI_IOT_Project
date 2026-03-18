@@ -83,15 +83,49 @@ def keyword_confidence(text, card_type):
     return round(len(matched) / len(keywords), 3)
 
 
-def extract_student_number(text):
+def _preprocess_strip(region):
     """
-    Search OCR text for a student ID number (7–9 consecutive digits).
+    Prepare a cropped card region for Tesseract:
+    grayscale → denoise → upscale 3x → Otsu threshold.
+    Upscaling to ~300 dpi equivalent gives Tesseract much cleaner input.
+    """
+    gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
+    gray = cv2.bilateralFilter(gray, 9, 75, 75)
+    gray = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    return thresh
 
-    UL student numbers are 7 digits (e.g. 21234567 or 1234567).
+
+def extract_student_number(text, card_img=None):
+    """
+    Search for a student ID number (7–9 consecutive digits).
+
+    When card_img is provided, first tries a targeted OCR pass on the bottom
+    20% of the card (where the UL ID number is printed) using single text-line
+    mode with a digit-only whitelist — more accurate than full-card sparse OCR.
+
+    Falls back to a regex scan of the full OCR text.
 
     Returns:
       The matched string if found, otherwise None.
     """
+    if card_img is not None:
+        try:
+            h = card_img.shape[0]
+            # Bottom 20% — below the green band, white background with ID number
+            bottom = card_img[int(h * 0.80):, :]
+            thresh = _preprocess_strip(bottom)
+            strip_text = pytesseract.image_to_string(
+                thresh,
+                config="--psm 7 -c tessedit_char_whitelist=0123456789",
+            )
+            match = re.search(r"(\d{7,9})", strip_text)
+            if match:
+                return match.group(1)
+        except Exception:
+            pass
+
+    # Fallback: regex over full OCR text
     match = re.search(r"\b(\d{7,9})\b", text)
     return match.group(1) if match else None
 
@@ -119,3 +153,62 @@ def has_name(text):
         if len(name_words) >= 2:
             return True
     return False
+
+
+def _parse_name_from_text(text):
+    """
+    Parse a name out of raw OCR text using label-then-value and heuristic strategies.
+    Returns a Title Case name string or None.
+    """
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+
+    # Strategy 1: line immediately after a NAME / AINM label
+    for i, line in enumerate(lines[:-1]):
+        if re.search(r"\b(NAME|AINM)\b", line, re.IGNORECASE):
+            candidate = lines[i + 1]
+            words = [w.upper().strip(".,") for w in candidate.split()]
+            name_words = [w for w in words if w.isalpha() and len(w) >= 2 and w not in _CARD_VOCAB]
+            if len(name_words) >= 2:
+                return candidate.title()
+
+    # Strategy 2: first line that looks like a name
+    for line in lines:
+        words = [w.upper().strip(".,") for w in line.split()]
+        name_words = [w for w in words if w.isalpha() and len(w) >= 2 and w not in _CARD_VOCAB]
+        if len(name_words) >= 2:
+            return line.title()
+
+    return None
+
+
+def extract_name(text, card_img=None):
+    """
+    Attempt to extract the cardholder's name.
+
+    When card_img is provided, first runs a targeted OCR pass on the top-right
+    of the card — on the UL student card the name field sits in roughly the
+    top 35% of the card, right of the photo (~40% from left).
+
+    Falls back to parsing the full-card OCR text.
+
+    Returns:
+      The name string in Title Case, or None if not found.
+    """
+    if card_img is not None:
+        try:
+            h, w = card_img.shape[:2]
+            # Top-right quadrant: top 35% of height, right 60% of width
+            name_region = card_img[0:int(h * 0.35), int(w * 0.40):]
+            thresh = _preprocess_strip(name_region)
+            region_text = pytesseract.image_to_string(
+                thresh,
+                config="--psm 6",  # assume uniform block of text
+            )
+            result = _parse_name_from_text(region_text)
+            if result:
+                return result
+        except Exception:
+            pass
+
+    # Fallback: parse full-card OCR text
+    return _parse_name_from_text(text)

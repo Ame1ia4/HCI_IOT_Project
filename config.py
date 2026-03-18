@@ -5,7 +5,7 @@
 CAMERA_SOURCE = "phone"  # "phone" | "esp32"
 
 SOURCES = {
-    "phone": "http://192.168.0.40:8080/video",  # IP Webcam app (Android/iOS)
+    "phone": "http://10.54.148.17:8080/video",  # IP Webcam app (Android/iOS)
     "esp32": "http://192.168.1.105/stream",
 }
 
@@ -54,6 +54,20 @@ CARD_COLOUR_RANGES = {
 CARD_KEYWORDS = {
     "ul_student": ["University of Limerick", "UL", "Student", "University"],
 }
+
+# ---------------------------------------------------------------------------
+# Supabase
+# Credentials are loaded from .env (never commit that file).
+# Set SUPABASE_ENABLED = True once your project and students table are ready.
+# Required table:  students (student_id TEXT PRIMARY KEY, name TEXT)
+# ---------------------------------------------------------------------------
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+SUPABASE_ENABLED = True
+SUPABASE_URL     = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY     = os.getenv("SUPABASE_KEY", "")
 
 # ---------------------------------------------------------------------------
 # Arduino serial communication
