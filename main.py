@@ -30,8 +30,9 @@ def get_camera():
 
         cam = Picamera2()
 
+        # ✅ FIX: use RGB (real output)
         config_ = cam.create_preview_configuration(
-            main={"size": (640, 480), "format": "BGR888"}
+            main={"size": (640, 480), "format": "RGB888"}
         )
         cam.configure(config_)
         cam.start()
@@ -140,7 +141,7 @@ def main():
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
 
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # ✅ REAL FIX: correct colour space
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         else:
@@ -156,7 +157,6 @@ def main():
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
-        # ✅ FIX: handle 2 or 3 return values
         result = detect_card(frame, debug=False)
 
         if len(result) == 3:
