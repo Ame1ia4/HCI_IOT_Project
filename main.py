@@ -13,7 +13,7 @@ from validation.ocr_validator import (
     extract_text, keyword_confidence,
     extract_student_number, has_name, extract_name
 )
-from validation.supabase_validator import lookup_student
+# ❌ REMOVED: lookup_student import
 from validation.layout_validator import validate_layout
 from validation.ml_validator import predict as ml_predict, is_model_available
 
@@ -32,7 +32,6 @@ def get_camera():
 
         cam = Picamera2()
 
-        # ✅ FIX: use BGR directly
         config_ = cam.create_preview_configuration(
             main={"size": (640, 480), "format": "BGR888"}
         )
@@ -80,8 +79,9 @@ def run_validators(card_img):
     student_number = extract_student_number(text, card_img)
     name_found = has_name(text)
 
-    db_found, db_name = lookup_student(student_number)
-    name = db_name if db_found else extract_name(text, card_img)
+    # ❌ REMOVED: database lookup
+    db_found = False
+    name = extract_name(text, card_img)
 
     layout_valid, layout_conf = validate_layout(card_img, card_type)
     ml_valid, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
@@ -105,7 +105,7 @@ def run_validators(card_img):
         "student_number": student_number,
         "name_found": name_found,
         "name": name,
-        "db_found": db_found,
+        "db_found": db_found,  # always False now
         "score": score,
         "is_valid": score >= config.VALIDATION_SCORE_THRESHOLD,
     }
@@ -140,7 +140,6 @@ def main():
         # -------- CAPTURE -------- #
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
-            # ❌ REMOVED: cv2.cvtColor (no longer needed)
         else:
             ret, frame = cap.read()
             if not ret:
@@ -179,15 +178,20 @@ def main():
                 if not last_results["is_valid"]:
                     already_triggered = False
 
-            cv2.drawContours(frame, [contour], -1,
-                             (0, 255, 0) if last_results["is_valid"] else (0, 0, 255), 3)
+            cv2.drawContours(
+                frame, [contour], -1,
+                (0, 255, 0) if last_results["is_valid"] else (0, 0, 255),
+                3
+            )
 
         else:
             last_results = None
             ocr_frame = 0
-            cv2.putText(frame, "No card detected",
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                        (100, 100, 100), 2)
+            cv2.putText(
+                frame, "No card detected",
+                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                (100, 100, 100), 2
+            )
 
         # -------- DISPLAY -------- #
         cv2.imshow("Validator", frame)
