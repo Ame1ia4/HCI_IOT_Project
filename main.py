@@ -36,7 +36,6 @@ def get_camera():
         cam.configure(config_)
         cam.start()
 
-        # ✅ FIX autofocus warning
         cam.set_controls({
             "AfMode": 2
         })
@@ -74,7 +73,6 @@ def run_validators(card_img):
             "is_valid": False,
         }
 
-    # ✅ FIX: normalize input for model
     card_img = cv2.resize(card_img, (224, 224))
 
     text = extract_text(card_img)
@@ -116,7 +114,7 @@ def main():
     cap = get_camera()
 
     frame_count = 0
-    FRAME_SKIP = 2  # ✅ FPS boost
+    FRAME_SKIP = 2
 
     debug = False
     last_card = None
@@ -142,7 +140,6 @@ def main():
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
 
-            # ✅ HARD FIX for blue tint
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
@@ -153,15 +150,20 @@ def main():
                 cap = get_camera()
                 continue
 
-        # ✅ skip frames
         frame_count += 1
         if frame_count % FRAME_SKIP != 0:
             continue
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
-        # ✅ disable debug (performance)
-        card_img, contour, edges = detect_card(frame, debug=False)
+        # ✅ FIX: handle 2 or 3 return values
+        result = detect_card(frame, debug=False)
+
+        if len(result) == 3:
+            card_img, contour, edges = result
+        else:
+            card_img, contour = result
+            edges = None
 
         if card_img is not None:
             last_card = card_img
