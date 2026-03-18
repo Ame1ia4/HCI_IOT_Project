@@ -30,7 +30,6 @@ def get_camera():
 
         cam = Picamera2()
 
-        # ✅ FIX: use RGB (real output)
         config_ = cam.create_preview_configuration(
             main={"size": (640, 480), "format": "RGB888"}
         )
@@ -80,7 +79,6 @@ def run_validators(card_img):
     text_conf = keyword_confidence(text, card_type)
     student_number = extract_student_number(text, card_img)
     name_found = has_name(text)
-
     name = extract_name(text, card_img)
 
     layout_valid, layout_conf = validate_layout(card_img, card_type)
@@ -140,9 +138,7 @@ def main():
     while True:
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
-
-            # ✅ REAL FIX: correct colour space
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            # ❌ DO NOT convert here
 
         else:
             ret, frame = cap.read()
@@ -207,7 +203,9 @@ def main():
                 (100, 100, 100), 2
             )
 
-        cv2.imshow("Validator", frame)
+        # ✅ ONLY convert for display
+        display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        cv2.imshow("Validator", display_frame)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
