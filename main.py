@@ -128,14 +128,15 @@ def draw_overlay(frame, contour, results):
         cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2,
     )
 
-    id_str = f"ID: {results['student_number']}" if results["student_number"] else "ID: not found"
+    id_str      = f"ID: {results['student_number']}" if results["student_number"] else "ID: not found"
+    attempt_str = f"Attempts: {results.get('attempts', '—')}"
     debug_lines = [
         f"Type:   {results['card_type'] or 'unknown'}",
         f"Colour: {results['colour_conf']:.2f}  "
         f"Text: {results['text_conf']:.2f}  "
         f"Layout: {results['layout_conf']:.2f}  "
         f"ML: {results['ml_conf']:.2f}",
-        f"Score:  {results['score']:.2f}  {id_str}",
+        f"Score:  {results['score']:.2f}  {id_str}  {attempt_str}",
     ]
 
     fh = frame.shape[0]
@@ -159,8 +160,10 @@ def main():
     no_detect         = 0
     last_results      = None
     ocr_frame         = 0
-    already_triggered = False
-    validator_running = False
+    already_triggered    = False
+    validator_running    = False
+    validation_attempts  = 0
+    attempts_to_validate = None
 
     COAST_FRAMES = 20
     OCR_INTERVAL = 8
@@ -176,11 +179,16 @@ def main():
 
     def run_validators_async(card_img):
         nonlocal last_results, validator_running, already_triggered
+        nonlocal validation_attempts, attempts_to_validate
+        validation_attempts += 1
         results = run_validators(card_img)
+        results["attempts"] = validation_attempts
         send_result(results["is_valid"])
         post_result(results)
         last_results = results
         if results["is_valid"] and not already_triggered:
+            attempts_to_validate = validation_attempts
+            print(f"[Validator] Valid after {attempts_to_validate} attempt(s)")
             log_scan(True)
             threading.Thread(target=green_on).start()
             threading.Thread(target=trigger_buzzer).start()
@@ -238,8 +246,10 @@ def main():
             if debug:
                 cv2.imshow("Warped Card", card_img)
         else:
-            last_results = None
-            ocr_frame    = 0
+            last_results        = None
+            ocr_frame           = 0
+            validation_attempts = 0
+            attempts_to_validate = None
             cv2.putText(
                 frame, "No card detected",
                 (10, 30),

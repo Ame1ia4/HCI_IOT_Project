@@ -75,6 +75,7 @@ _DASHBOARD = """
       <span>Text: {{ '%.2f' % latest.text_conf }}</span>
       <span>Layout: {{ '%.2f' % latest.layout_conf }}</span>
       <span>ML: {{ '%.2f' % latest.ml_conf }}</span>
+      <span>Attempts: <strong>{{ latest.attempts or '—' }}</strong></span>
       <br><small style="color:#666">{{ latest.timestamp }}</small>
     </div>
   {% else %}
@@ -86,7 +87,7 @@ _DASHBOARD = """
   <table>
     <tr>
       <th>Time</th><th>Result</th><th>Card Type</th>
-      <th>Score</th><th>Colour</th><th>Text</th><th>Layout</th><th>ML</th>
+      <th>Score</th><th>Colour</th><th>Text</th><th>Layout</th><th>ML</th><th>Attempts</th>
     </tr>
     {% for s in log %}
     <tr class="{{ 'v' if s.is_valid else 'i' }}">
@@ -98,6 +99,7 @@ _DASHBOARD = """
       <td>{{ '%.2f' % s.text_conf }}</td>
       <td>{{ '%.2f' % s.layout_conf }}</td>
       <td>{{ '%.2f' % s.ml_conf }}</td>
+      <td>{{ s.attempts or '—' }}</td>
     </tr>
     {% endfor %}
   </table>
