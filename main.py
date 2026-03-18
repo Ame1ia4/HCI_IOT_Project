@@ -99,6 +99,12 @@ def run_validators(card_img):
 
     is_valid = score >= config.VALIDATION_SCORE_THRESHOLD
 
+    # Hard gate: zero keyword matches means this is not a UL card regardless
+    # of colour/layout score — prevents similar-coloured cards (learner permits
+    # etc.) from passing on colour alone.
+    if text_conf == 0.0:
+        is_valid = False
+
     return {
         "card_type":      card_type,
         "colour_conf":    colour_conf,

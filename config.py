@@ -41,8 +41,10 @@ VALIDATION_WEIGHTS = {
 # ---------------------------------------------------------------------------
 CARD_COLOUR_RANGES = {
     # UL dark green #006B3C — OpenCV HSV: H≈77, S=255, V=107
-    # Wide ranges to handle lighting variation and camera desaturation
-    "ul_student": (40, 110, 30, 255, 5, 220),
+    # Broad S/V ranges to handle camera desaturation and lighting variation.
+    # Hue is slightly tighter than original (45-105 vs 40-110) but the main
+    # discriminator against non-UL cards is the text gate in run_validators.
+    "ul_student": (45, 105, 30, 255, 5, 220),
 }
 
 # ---------------------------------------------------------------------------
