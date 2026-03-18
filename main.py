@@ -24,17 +24,28 @@ from picamera2 import Picamera2
 
 def get_camera():
     if config.CAMERA_SOURCE == "pi":
+        if Picamera2 is None:
+            raise RuntimeError("Picamera2 not installed")
+
         cam = Picamera2()
+
+        # ✅ PROPER CONFIGURATION (THIS IS WHAT YOU WERE MISSING)
+        config_ = cam.create_preview_configuration(
+            main={"size": (640, 480), "format": "RGB888"}
+        )
+        cam.configure(config_)
+
         cam.start()
-        cam.set_controls({"AfMode": 2})
         return cam
 
     source = config.SOURCES[config.CAMERA_SOURCE]
     cap = cv2.VideoCapture(source)
+
     if not cap.isOpened():
         raise RuntimeError(
             f"Could not open camera source '{config.CAMERA_SOURCE}': {source}"
         )
+
     return cap
 
 
@@ -164,7 +175,6 @@ def main():
     COAST_FRAMES = 20
     OCR_INTERVAL = 8
 
-    already_triggered = False
     buzzer_active = False
 
     def trigger_buzzer():
@@ -175,8 +185,10 @@ def main():
             buzzer_active = False
 
     while True:
+        # ---------------- CAPTURE FRAME ---------------- #
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # ✅ FIX: convert ONCE here
         else:
             ret, frame = cap.read()
             if not ret:
@@ -185,6 +197,7 @@ def main():
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
+        # ---------------- DETECTION ---------------- #
         card_img, contour, edges = detect_card(frame, debug=True)
 
         if card_img is not None:
@@ -197,10 +210,13 @@ def main():
                 card_img = last_card
                 contour  = last_contour
 
+        # ---------------- VALIDATION ---------------- #
         if card_img is not None:
             ocr_frame += 1
+
             if last_results is None or ocr_frame % OCR_INTERVAL == 0:
                 last_results = run_validators(card_img)
+
                 send_result(last_results["is_valid"])
                 post_result(last_results)
 
@@ -213,19 +229,22 @@ def main():
                     already_triggered = False
 
             draw_overlay(frame, contour, last_results)
+
             if debug:
                 cv2.imshow("Warped Card", card_img)
+
         else:
             last_results = None
             ocr_frame    = 0
+
             cv2.putText(
                 frame, "No card detected",
                 (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2,
             )
 
-        display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        cv2.imshow("Disability Card Validator", display_frame)
+        # ---------------- DISPLAY ---------------- #
+        cv2.imshow("Disability Card Validator", frame)
 
         if debug:
             cv2.imshow("Canny Edges", edges)
@@ -236,6 +255,7 @@ def main():
                 except cv2.error:
                     pass
 
+        # ---------------- CONTROLS ---------------- #
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
             break
@@ -245,6 +265,7 @@ def main():
 
     if config.CAMERA_SOURCE != "pi":
         cap.release()
+
     cv2.destroyAllWindows()
 
 
