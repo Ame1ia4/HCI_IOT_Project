@@ -23,6 +23,8 @@ from comms.blink import green_on
 from comms.buzzer import beep
 
 
+# ---------------- CAMERA ---------------- #
+
 def get_camera():
     if config.CAMERA_SOURCE == "pi":
         if Picamera2 is None:
@@ -30,14 +32,18 @@ def get_camera():
 
         cam = Picamera2()
 
+        # ✅ LOWER RESOLUTION = BIG FPS BOOST
         config_ = cam.create_preview_configuration(
-            main={"size": (640, 480), "format": "RGB888"}
+            main={"size": (320, 240), "format": "RGB888"}
         )
         cam.configure(config_)
         cam.start()
 
+        # ✅ STABLE COLOUR (no drifting / blue tint)
         cam.set_controls({
-            "AfMode": 2
+            "AfMode": 2,
+            "AwbEnable": False,
+            "ColourGains": (1.6, 1.2),
         })
 
         return cam
@@ -54,6 +60,8 @@ def get_camera():
 
     raise RuntimeError(f"Could not open camera: {source}")
 
+
+# ---------------- VALIDATION ---------------- #
 
 def run_validators(card_img):
     card_type, colour_conf = detect_card_type(card_img)
@@ -109,11 +117,15 @@ def run_validators(card_img):
     }
 
 
+# ---------------- MAIN ---------------- #
+
 def main():
     cap = get_camera()
 
     frame_count = 0
-    FRAME_SKIP = 2
+
+    # ✅ LESS WORK PER FRAME
+    FRAME_SKIP = 4
 
     debug = False
     last_card = None
@@ -124,7 +136,9 @@ def main():
     already_triggered = False
 
     COAST_FRAMES = 20
-    OCR_INTERVAL = 8
+
+    # ✅ OCR MUCH LESS FREQUENT
+    OCR_INTERVAL = 15
 
     buzzer_active = False
 
@@ -137,8 +151,7 @@ def main():
 
     while True:
         if config.CAMERA_SOURCE == "pi":
-            frame = cap.capture_array()
-            # ❌ DO NOT convert here
+            frame = cap.capture_array()  # ✅ KEEP RAW (no conversion)
 
         else:
             ret, frame = cap.read()
@@ -151,9 +164,13 @@ def main():
         if frame_count % FRAME_SKIP != 0:
             continue
 
+        # ✅ Resize once
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
-        result = detect_card(frame, debug=False)
+        # ✅ Smaller image for detection (faster)
+        small = cv2.resize(frame, (320, 240))
+
+        result = detect_card(small, debug=False)
 
         if len(result) == 3:
             card_img, contour, edges = result
@@ -178,11 +195,17 @@ def main():
                 last_results = run_validators(card_img)
 
                 send_result(last_results["is_valid"])
-                post_result(last_results)
+
+                # ✅ NON-BLOCKING HTTP
+                threading.Thread(
+                    target=post_result,
+                    args=(last_results,),
+                    daemon=True
+                ).start()
 
                 if last_results["is_valid"] and not already_triggered:
-                    threading.Thread(target=green_on).start()
-                    threading.Thread(target=trigger_buzzer).start()
+                    threading.Thread(target=green_on, daemon=True).start()
+                    threading.Thread(target=trigger_buzzer, daemon=True).start()
                     already_triggered = True
 
                 if not last_results["is_valid"]:
@@ -199,13 +222,15 @@ def main():
             ocr_frame = 0
             cv2.putText(
                 frame, "No card detected",
-                (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                (100, 100, 100), 2
+                (10, 30),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.7,
+                (100, 100, 100),
+                2
             )
 
-        # ✅ ONLY convert for display
-        display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        cv2.imshow("Validator", display_frame)
+        # ✅ NO COLOR CONVERSION (fix blue issue)
+        cv2.imshow("Validator", frame)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
