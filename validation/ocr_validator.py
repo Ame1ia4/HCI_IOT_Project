@@ -7,8 +7,7 @@ import pytesseract
 from config import CARD_KEYWORDS
 
 # Point pytesseract at the default Windows install location
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-
+pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 def preprocess_for_ocr(card_img):
     """
