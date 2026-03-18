@@ -6,7 +6,10 @@ BuzzerPin = 4
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(BuzzerPin, GPIO.OUT)
 
-def beep(duration=5):
-    GPIO.output(BuzzerPin, GPIO.HIGH)
+#nice tone
+pwm = GPIO.PWM(BuzzerPin, 1000)
+
+def beep(duration=0.3):
+    pwm.start(50)  # 50% duty cycle
     time.sleep(duration)
-    GPIO.output(BuzzerPin, GPIO.LOW)
+    pwm.stop()

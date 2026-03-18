@@ -1,5 +1,4 @@
 import cv2
-
 import config
 from detection.card_detector import detect_card
 from validation.colour_validator import detect_card_type
@@ -11,14 +10,11 @@ from validation.ml_validator import predict as ml_predict, is_model_available
 from comms.blink import green_on
 from comms.buzzer import beep
 import threading
-
 from picamera2 import Picamera2
-
 
 # ---------------- CAMERA ---------------- #
 
 def get_camera():
-
     if config.CAMERA_SOURCE == "pi":
         cam = Picamera2()
         cam.start()
@@ -39,7 +35,6 @@ def get_camera():
 # ---------------- VALIDATION ---------------- #
 
 def run_validators(card_img):
-
     card_type, colour_conf = detect_card_type(card_img)
 
     if card_type is None:
@@ -82,7 +77,6 @@ def run_validators(card_img):
         )
 
     score = round(score, 3)
-
     is_valid = score >= config.VALIDATION_SCORE_THRESHOLD
 
     return {
@@ -102,14 +96,12 @@ def run_validators(card_img):
 # ---------------- OVERLAY ---------------- #
 
 def draw_overlay(frame, contour, results):
-
     colour = (0, 200, 0) if results["is_valid"] else (0, 0, 220)
     label = "VALID" if results["is_valid"] else "INVALID"
 
     cv2.drawContours(frame, [contour], -1, colour, 3)
 
     x, y, w, h = cv2.boundingRect(contour)
-
     cv2.rectangle(frame, (x, y - 36), (x + w, y), colour, -1)
 
     cv2.putText(
@@ -129,7 +121,6 @@ def draw_overlay(frame, contour, results):
     ]
 
     fh = frame.shape[0]
-
     for i, line in enumerate(debug_lines):
         cv2.putText(
             frame,
@@ -145,7 +136,6 @@ def draw_overlay(frame, contour, results):
 # ---------------- MAIN ---------------- #
 
 def main():
-
     cap = get_camera()
 
     print(f"Camera source: {config.CAMERA_SOURCE} — press Q to quit, D to toggle debug view")
@@ -159,6 +149,16 @@ def main():
 
     COAST_FRAMES = 20
     OCR_INTERVAL = 8
+
+    already_triggered = False
+    buzzer_active = False
+
+    def trigger_buzzer():
+        nonlocal buzzer_active
+        if not buzzer_active:
+            buzzer_active = True
+            beep()
+            buzzer_active = False
 
     while True:
 
@@ -195,9 +195,10 @@ def main():
 
                 send_result(last_results["is_valid"])
                 post_result(last_results)
+
                 if last_results["is_valid"] and not already_triggered:
                     threading.Thread(target=green_on).start()
-                    threading.Thread(target=beep).start()
+                    threading.Thread(target=trigger_buzzer).start()
                     already_triggered = True
 
                 if not last_results["is_valid"]:
@@ -224,7 +225,7 @@ def main():
 
         display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         cv2.imshow("Disability Card Validator", display_frame)
-        
+
         if debug:
             cv2.imshow("Canny Edges", edges)
 
