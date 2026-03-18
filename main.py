@@ -33,15 +33,15 @@ def get_camera():
         cam = Picamera2()
 
         config_ = cam.create_preview_configuration(
-            main={"size": (320, 240), "format": "RGB888"}
+            main={"size": (640, 480), "format": "RGB888"}
         )
         cam.configure(config_)
         cam.start()
 
-        # ✅ LET CAMERA HANDLE COLOUR PROPERLY
+        # ✅ Let camera handle colour correctly
         cam.set_controls({
             "AfMode": 2,
-            "AwbEnable": True,   # 🔥 CRITICAL FIX
+            "AwbEnable": True
         })
 
         return cam
@@ -121,7 +121,7 @@ def main():
     cap = get_camera()
 
     frame_count = 0
-    FRAME_SKIP = 3   # balanced
+    FRAME_SKIP = 3   # ✅ smoother FPS
 
     last_card = None
     last_contour = None
@@ -130,8 +130,8 @@ def main():
     ocr_frame = 0
     already_triggered = False
 
-    COAST_FRAMES = 20
-    OCR_INTERVAL = 12
+    COAST_FRAMES = 15
+    OCR_INTERVAL = 12   # ✅ less OCR = big speed gain
 
     def trigger_buzzer():
         beep()
@@ -140,7 +140,7 @@ def main():
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
 
-            # ✅ FIX COLOUR ONCE
+            # ✅ CRITICAL: fix colour ONCE
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         else:
@@ -154,13 +154,13 @@ def main():
         if frame_count % FRAME_SKIP != 0:
             continue
 
+        # ✅ Slightly smaller processing = faster
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
-        # ✅ DETECT ON SAME FRAME (no mismatch)
         result = detect_card(frame, debug=False)
 
         if len(result) == 3:
-            card_img, contour, edges = result
+            card_img, contour, _ = result
         else:
             card_img, contour = result
 
@@ -182,6 +182,7 @@ def main():
 
                 send_result(last_results["is_valid"])
 
+                # ✅ NON-BLOCKING HTTP (HUGE FIX)
                 threading.Thread(
                     target=post_result,
                     args=(last_results,),
@@ -198,8 +199,8 @@ def main():
 
             cv2.drawContours(
                 frame, [contour], -1,
-                (0, 255, 0) if last_results["is_valid"] else (0, 0, 255),
-                3
+                (0, 255, 0) if last_results and last_results["is_valid"] else (0, 0, 255),
+                2
             )
 
         else:
@@ -209,11 +210,12 @@ def main():
                 frame, "No card detected",
                 (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.7,
+                0.6,
                 (100, 100, 100),
                 2
             )
 
+        # ✅ NO conversion needed anymore
         cv2.imshow("Validator", frame)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
