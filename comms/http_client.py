@@ -26,6 +26,18 @@ def post_result(results: dict):
     if not config.ENDPOINT_ENABLED:
         return
 
+    # Session reset signal (card removed without a valid result)
+    if results.get("session_reset"):
+        try:
+            requests.post(
+                config.ENDPOINT_URL,
+                json={"session_reset": True},
+                timeout=config.ENDPOINT_TIMEOUT,
+            )
+        except requests.exceptions.RequestException:
+            pass
+        return
+
     payload = {
         "timestamp":      datetime.datetime.now().isoformat(timespec="seconds"),
         "is_valid":       results.get("is_valid", False),
@@ -36,7 +48,7 @@ def post_result(results: dict):
         "layout_conf":    results.get("layout_conf", 0.0),
         "ml_conf":        results.get("ml_conf", 0.0),
         "student_number": results.get("student_number"),
-        "name_found":     results.get("name_found", False),
+        "attempts":       results.get("attempts"),
     }
 
     try:

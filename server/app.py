@@ -18,9 +18,11 @@ from flask import Flask, jsonify, render_template_string, request
 
 app = Flask(__name__)
 
-# In-memory log — keeps the last 50 scans
-_scan_log  = deque(maxlen=50)
-_latest    = None
+# In-memory log — keeps the last 50 completed (valid) sessions
+_scan_log        = deque(maxlen=50)
+# Live invalids accumulating in the current scan session
+_current_session = []
+_latest          = None
 
 # ---------------------------------------------------------------------------
 # Dashboard HTML (inline so no separate templates folder is needed)
@@ -35,6 +37,7 @@ _DASHBOARD = """
   <style>
     body { font-family: Arial, sans-serif; background: #1a1a2e; color: #eee; margin: 0; padding: 24px; }
     h1   { color: #e0e0e0; margin-bottom: 4px; }
+    h2   { color: #90caf9; margin-top: 32px; margin-bottom: 8px; }
     .sub { color: #888; margin-bottom: 32px; font-size: 0.9em; }
 
     .result-box {
@@ -53,11 +56,24 @@ _DASHBOARD = """
     .meta { color: #aaa; font-size: 0.9em; margin-bottom: 32px; }
     .meta span { margin-right: 20px; }
 
-    table { width: 100%; border-collapse: collapse; font-size: 0.88em; }
+    .live-label {
+      display: inline-block;
+      background: #3a2800;
+      color: #ffcc80;
+      border: 1px solid #ff9800;
+      border-radius: 4px;
+      padding: 2px 10px;
+      font-size: 0.78em;
+      margin-bottom: 8px;
+      letter-spacing: 1px;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.88em; margin-bottom: 32px; }
     th    { text-align: left; padding: 8px 12px; background: #16213e; color: #90caf9; border-bottom: 1px solid #333; }
     td    { padding: 7px 12px; border-bottom: 1px solid #222; }
     tr.v  { background: #1b3a1f; }
     tr.i  { background: #3a1a1a; }
+    tr.ip { background: #2a1a00; color: #ccc; }  /* in-progress invalid */
   </style>
 </head>
 <body>
@@ -82,29 +98,50 @@ _DASHBOARD = """
     <div class="result-box none">WAITING FOR SCAN</div>
   {% endif %}
 
-  <h2 style="color:#90caf9; margin-top: 32px;">Scan History</h2>
+  {% if session %}
+  <h2>Current Session</h2>
+  <span class="live-label">LIVE &mdash; {{ session|length }} invalid attempt{{ 's' if session|length != 1 }}</span>
+  <table>
+    <tr>
+      <th>Time</th><th>Attempt</th>
+      <th>Score</th><th>Colour</th><th>Text</th><th>Layout</th><th>ML</th>
+    </tr>
+    {% for s in session|reverse %}
+    <tr class="ip">
+      <td>{{ s.timestamp }}</td>
+      <td>#{{ loop.revindex }}</td>
+      <td>{{ '%.2f' % s.score }}</td>
+      <td>{{ '%.2f' % s.colour_conf }}</td>
+      <td>{{ '%.2f' % s.text_conf }}</td>
+      <td>{{ '%.2f' % s.layout_conf }}</td>
+      <td>{{ '%.2f' % s.ml_conf }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h2>Scan History</h2>
   {% if log %}
   <table>
     <tr>
-      <th>Time</th><th>Result</th><th>Card Type</th>
+      <th>Time</th><th>Card Type</th>
       <th>Score</th><th>Colour</th><th>Text</th><th>Layout</th><th>ML</th><th>Attempts</th>
     </tr>
     {% for s in log %}
-    <tr class="{{ 'v' if s.is_valid else 'i' }}">
+    <tr class="v">
       <td>{{ s.timestamp }}</td>
-      <td><strong>{{ 'VALID' if s.is_valid else 'INVALID' }}</strong></td>
       <td>{{ s.card_type or '—' }}</td>
       <td>{{ '%.2f' % s.score }}</td>
       <td>{{ '%.2f' % s.colour_conf }}</td>
       <td>{{ '%.2f' % s.text_conf }}</td>
       <td>{{ '%.2f' % s.layout_conf }}</td>
       <td>{{ '%.2f' % s.ml_conf }}</td>
-      <td>{{ s.attempts or '—' }}</td>
+      <td><strong>{{ s.attempts or '—' }}</strong></td>
     </tr>
     {% endfor %}
   </table>
   {% else %}
-    <p style="color:#666">No scans yet.</p>
+    <p style="color:#666">No successful scans yet.</p>
   {% endif %}
 </body>
 </html>
@@ -118,13 +155,28 @@ _DASHBOARD = """
 @app.post("/scan")
 def receive_scan():
     """Receive a scan result from the CV pipeline."""
-    global _latest
+    global _latest, _current_session
     data = request.get_json(silent=True)
     if not data:
         return jsonify({"error": "no JSON body"}), 400
 
+    # Card removed — discard the pending invalid attempts
+    if data.get("session_reset"):
+        _current_session.clear()
+        _latest = None
+        return jsonify({"status": "ok"}), 200
+
     _latest = data
-    _scan_log.appendleft(data)  # newest first
+
+    if data.get("is_valid"):
+        # Session complete — move to history as a single valid entry
+        _scan_log.appendleft(data)
+        _current_session.clear()
+    else:
+        # Live invalid — accumulate (cap at 30 to avoid memory growth)
+        if len(_current_session) < 30:
+            _current_session.append(data)
+
     return jsonify({"status": "ok"}), 200
 
 
@@ -134,6 +186,7 @@ def dashboard():
     return render_template_string(
         _DASHBOARD,
         latest=_latest,
+        session=list(_current_session),
         log=list(_scan_log),
         now=datetime.now().strftime("%H:%M:%S"),
     )

@@ -180,8 +180,15 @@ def main():
     def run_validators_async(card_img):
         nonlocal last_results, validator_running, already_triggered
         nonlocal validation_attempts, attempts_to_validate
-        validation_attempts += 1
         results = run_validators(card_img)
+
+        # No UL green band detected — likely not a UL card (TV, book, etc.)
+        # Don't update display so random rectangles don't cause false INVALIDs
+        if results["card_type"] is None:
+            validator_running = False
+            return
+
+        validation_attempts += 1
         results["attempts"] = validation_attempts
         send_result(results["is_valid"])
         post_result(results)
@@ -246,6 +253,10 @@ def main():
             if debug:
                 cv2.imshow("Warped Card", card_img)
         else:
+            if last_results is not None:
+                # Card just left the frame — end the session
+                post_result({"session_reset": True})
+                already_triggered = False
             last_results        = None
             ocr_frame           = 0
             validation_attempts = 0
