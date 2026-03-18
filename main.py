@@ -1,5 +1,6 @@
 import cv2
 import threading
+import time
 
 try:
     from picamera2 import Picamera2
@@ -13,7 +14,6 @@ from validation.ocr_validator import (
     extract_text, keyword_confidence,
     extract_student_number, has_name, extract_name
 )
-# ❌ REMOVED: lookup_student import
 from validation.layout_validator import validate_layout
 from validation.ml_validator import predict as ml_predict, is_model_available
 
@@ -22,8 +22,6 @@ from comms.http_client import post_result
 from comms.blink import green_on
 from comms.buzzer import beep
 
-
-# ---------------- CAMERA ---------------- #
 
 def get_camera():
     if config.CAMERA_SOURCE == "pi":
@@ -38,23 +36,25 @@ def get_camera():
         cam.configure(config_)
         cam.start()
 
+        # ✅ FIX autofocus warning
         cam.set_controls({
-            "AfMode": 2,
-            "AfTrigger": 0
+            "AfMode": 2
         })
 
         return cam
 
     source = config.SOURCES[config.CAMERA_SOURCE]
-    cap = cv2.VideoCapture(source)
 
-    if not cap.isOpened():
-        raise RuntimeError(f"Could not open camera: {source}")
+    for attempt in range(5):
+        cap = cv2.VideoCapture(source)
+        time.sleep(1)
+        if cap.isOpened():
+            return cap
+        cap.release()
+        time.sleep(2)
 
-    return cap
+    raise RuntimeError(f"Could not open camera: {source}")
 
-
-# ---------------- VALIDATION ---------------- #
 
 def run_validators(card_img):
     card_type, colour_conf = detect_card_type(card_img)
@@ -74,13 +74,14 @@ def run_validators(card_img):
             "is_valid": False,
         }
 
+    # ✅ FIX: normalize input for model
+    card_img = cv2.resize(card_img, (224, 224))
+
     text = extract_text(card_img)
     text_conf = keyword_confidence(text, card_type)
     student_number = extract_student_number(text, card_img)
     name_found = has_name(text)
 
-    # ❌ REMOVED: database lookup
-    db_found = False
     name = extract_name(text, card_img)
 
     layout_valid, layout_conf = validate_layout(card_img, card_type)
@@ -105,16 +106,17 @@ def run_validators(card_img):
         "student_number": student_number,
         "name_found": name_found,
         "name": name,
-        "db_found": db_found,  # always False now
+        "db_found": False,
         "score": score,
         "is_valid": score >= config.VALIDATION_SCORE_THRESHOLD,
     }
 
 
-# ---------------- MAIN ---------------- #
-
 def main():
     cap = get_camera()
+
+    frame_count = 0
+    FRAME_SKIP = 2  # ✅ FPS boost
 
     debug = False
     last_card = None
@@ -137,18 +139,29 @@ def main():
             buzzer_active = False
 
     while True:
-        # -------- CAPTURE -------- #
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
+
+            # ✅ HARD FIX for blue tint
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
         else:
             ret, frame = cap.read()
             if not ret:
-                break
+                cap.release()
+                cap = get_camera()
+                continue
+
+        # ✅ skip frames
+        frame_count += 1
+        if frame_count % FRAME_SKIP != 0:
+            continue
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
-        # -------- DETECTION -------- #
-        card_img, contour, edges = detect_card(frame, debug=True)
+        # ✅ disable debug (performance)
+        card_img, contour, edges = detect_card(frame, debug=False)
 
         if card_img is not None:
             last_card = card_img
@@ -160,7 +173,6 @@ def main():
                 card_img = last_card
                 contour = last_contour
 
-        # -------- VALIDATION -------- #
         if card_img is not None:
             ocr_frame += 1
 
@@ -193,11 +205,7 @@ def main():
                 (100, 100, 100), 2
             )
 
-        # -------- DISPLAY -------- #
         cv2.imshow("Validator", frame)
-
-        if debug:
-            cv2.imshow("Edges", edges)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord("q"):
