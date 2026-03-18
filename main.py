@@ -30,26 +30,15 @@ def get_camera():
 
         cam = Picamera2()
 
+        # ✅ FIX: use RGB (real output)
         config_ = cam.create_preview_configuration(
             main={"size": (640, 480), "format": "RGB888"}
         )
         cam.configure(config_)
         cam.start()
 
-        # 🔥 FINAL FIX: disable AWB + force correct colour
         cam.set_controls({
-            "AfMode": 2,
-
-            # ❌ TURN OFF auto white balance
-            "AwbEnable": False,
-
-            # 🔥 MANUAL GAINS (fix blue tint)
-            "ColourGains": (2.5, 0.8),
-
-            # Optional tuning
-            "Brightness": 0.05,
-            "Contrast": 1.1,
-            "Saturation": 1.2
+            "AfMode": 2
         })
 
         return cam
@@ -91,6 +80,7 @@ def run_validators(card_img):
     text_conf = keyword_confidence(text, card_type)
     student_number = extract_student_number(text, card_img)
     name_found = has_name(text)
+
     name = extract_name(text, card_img)
 
     layout_valid, layout_conf = validate_layout(card_img, card_type)
@@ -127,6 +117,7 @@ def main():
     frame_count = 0
     FRAME_SKIP = 2
 
+    debug = False
     last_card = None
     last_contour = None
     no_detect = 0
@@ -149,6 +140,8 @@ def main():
     while True:
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
+
+            # ✅ REAL FIX: correct colour space
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
         else:
@@ -170,6 +163,7 @@ def main():
             card_img, contour, edges = result
         else:
             card_img, contour = result
+            edges = None
 
         if card_img is not None:
             last_card = card_img
@@ -215,8 +209,11 @@ def main():
 
         cv2.imshow("Validator", frame)
 
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
             break
+        if key == ord("d"):
+            debug = not debug
 
     if config.CAMERA_SOURCE != "pi":
         cap.release()
