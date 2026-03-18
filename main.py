@@ -36,8 +36,15 @@ def get_camera():
         cam.configure(config_)
         cam.start()
 
+        # 🔥 FIX: proper colour + white balance tuning
         cam.set_controls({
-            "AfMode": 2
+            "AfMode": 2,
+            "AwbEnable": True,
+            "AwbMode": 1,
+            "ColourGains": (1.8, 1.1),   # ✅ fixes blue tint
+            "Brightness": 0.05,
+            "Contrast": 1.1,
+            "Saturation": 1.2
         })
 
         return cam
@@ -137,7 +144,7 @@ def main():
     while True:
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # ✅ ONLY HERE
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)  # ✅ correct conversion
 
         else:
             ret, frame = cap.read()
@@ -145,7 +152,6 @@ def main():
                 cap.release()
                 cap = get_camera()
                 continue
-            # ❌ NO conversion here
 
         frame_count += 1
         if frame_count % FRAME_SKIP != 0:
@@ -202,7 +208,6 @@ def main():
                 (100, 100, 100), 2
             )
 
-        # ✅ NO conversion here anymore
         cv2.imshow("Validator", frame)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
