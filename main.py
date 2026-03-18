@@ -23,8 +23,6 @@ from comms.blink import green_on
 from comms.buzzer import beep
 
 
-# ---------------- CAMERA ---------------- #
-
 def get_camera():
     if config.CAMERA_SOURCE == "pi":
         if Picamera2 is None:
@@ -38,7 +36,6 @@ def get_camera():
         cam.configure(config_)
         cam.start()
 
-        # ✅ Let camera handle colour correctly
         cam.set_controls({
             "AfMode": 2,
             "AwbEnable": True
@@ -58,8 +55,6 @@ def get_camera():
 
     raise RuntimeError(f"Could not open camera: {source}")
 
-
-# ---------------- VALIDATION ---------------- #
 
 def run_validators(card_img):
     card_type, colour_conf = detect_card_type(card_img)
@@ -115,13 +110,11 @@ def run_validators(card_img):
     }
 
 
-# ---------------- MAIN ---------------- #
-
 def main():
     cap = get_camera()
 
     frame_count = 0
-    FRAME_SKIP = 3   # ✅ smoother FPS
+    FRAME_SKIP = 3
 
     last_card = None
     last_contour = None
@@ -131,17 +124,14 @@ def main():
     already_triggered = False
 
     COAST_FRAMES = 15
-    OCR_INTERVAL = 12   # ✅ less OCR = big speed gain
+    OCR_INTERVAL = 12
 
     def trigger_buzzer():
         beep()
 
     while True:
         if config.CAMERA_SOURCE == "pi":
-            frame = cap.capture_array()
-
-            # ✅ CRITICAL: fix colour ONCE
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            frame = cap.capture_array()  # ✅ KEEP RGB
 
         else:
             ret, frame = cap.read()
@@ -154,7 +144,6 @@ def main():
         if frame_count % FRAME_SKIP != 0:
             continue
 
-        # ✅ Slightly smaller processing = faster
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
         result = detect_card(frame, debug=False)
@@ -182,7 +171,6 @@ def main():
 
                 send_result(last_results["is_valid"])
 
-                # ✅ NON-BLOCKING HTTP (HUGE FIX)
                 threading.Thread(
                     target=post_result,
                     args=(last_results,),
@@ -215,8 +203,9 @@ def main():
                 2
             )
 
-        # ✅ NO conversion needed anymore
-        cv2.imshow("Validator", frame)
+        # ✅ ONLY convert for display
+        display = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        cv2.imshow("Validator", display)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
