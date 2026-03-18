@@ -87,13 +87,18 @@ def keyword_confidence(text, card_type):
 def _preprocess_strip(region):
     """
     Prepare a cropped card region for Tesseract:
-    grayscale → denoise → upscale 3x → Otsu threshold.
-    Upscaling to ~300 dpi equivalent gives Tesseract much cleaner input.
+    grayscale → denoise → upscale 3x → adaptive threshold.
+    Adaptive thresholding handles uneven lighting across the white card
+    background far better than a global Otsu threshold.
     """
     gray = cv2.cvtColor(region, cv2.COLOR_BGR2GRAY)
     gray = cv2.bilateralFilter(gray, 9, 75, 75)
     gray = cv2.resize(gray, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
-    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    thresh = cv2.adaptiveThreshold(
+        gray, 255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY,
+        31, 10,
+    )
     return thresh
 
 

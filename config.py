@@ -5,7 +5,7 @@
 CAMERA_SOURCE = "phone"  # "phone" | "esp32" | "pi"
 
 SOURCES = {
-    "phone": "http://10.54.148.17:8080/video",  # IP Webcam app (Android/iOS)
+    "phone": "http://192.168.0.40:8080/video",  # IP Webcam app (Android/iOS)
     "esp32": "http://192.168.1.105/stream",
     "pi":    "/dev/video0",                      # local Pi camera device
 }
@@ -33,9 +33,10 @@ CANNY_THRESHOLD_HIGH = 100
 VALIDATION_SCORE_THRESHOLD = 0.65  # minimum weighted score to call VALID
 
 VALIDATION_WEIGHTS = {
-    "colour": 0.4,  # colour of green band — very reliable
-    "text":   0.3,  # OCR keywords — less reliable on laminated cards under camera
-    "layout": 0.3,  # layout zone checks — very reliable
+    "colour": 0.35,  # colour of green band — very reliable
+    "text":   0.20,  # OCR keywords — less reliable on laminated cards under camera
+    "layout": 0.25,  # layout zone checks — very reliable
+    "ml":     0.20,  # ORB feature matching — falls back to 0 if no reference image
 }
 
 # ---------------------------------------------------------------------------
