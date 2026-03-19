@@ -163,6 +163,7 @@ def main():
     debug             = False
     last_card         = None
     last_contour      = None
+    locked_contour    = None   # frozen at the moment of valid scan
     no_detect         = 0
     last_results      = None
     ocr_frame         = 0
@@ -183,9 +184,9 @@ def main():
             beep()
             buzzer_active = False
 
-    def run_validators_async(card_img):
+    def run_validators_async(card_img, snap_contour):
         nonlocal last_results, validator_running, already_triggered
-        nonlocal validation_attempts, attempts_to_validate
+        nonlocal validation_attempts, attempts_to_validate, locked_contour
         results = run_validators(card_img)
 
         # No UL green band detected — likely not a UL card (TV, book, etc.)
@@ -201,6 +202,7 @@ def main():
         last_results = results
         if results["is_valid"] and not already_triggered:
             attempts_to_validate = validation_attempts
+            locked_contour       = snap_contour   # freeze box position
             print(f"[Validator] Valid after {attempts_to_validate} attempt(s)")
             log_scan(True)
             threading.Thread(target=green_on).start()
@@ -251,12 +253,13 @@ def main():
 
         if card_img is not None:
             ocr_frame += 1
-            if not validator_running and (last_results is None or ocr_frame % OCR_INTERVAL == 0):
+            if not validator_running and not already_triggered and (last_results is None or ocr_frame % OCR_INTERVAL == 0):
                 validator_running = True
-                threading.Thread(target=run_validators_async, args=(card_img,), daemon=True).start()
+                threading.Thread(target=run_validators_async, args=(card_img, contour), daemon=True).start()
 
             if last_results is not None:
-                draw_overlay(frame, contour, last_results)
+                display_contour = locked_contour if (already_triggered and locked_contour is not None) else contour
+                draw_overlay(frame, display_contour, last_results)
             if debug:
                 cv2.imshow("Warped Card", card_img)
         else:
@@ -264,9 +267,10 @@ def main():
                 # Card just left the frame — end the session
                 post_result({"session_reset": True})
                 already_triggered = False
-            last_results        = None
-            ocr_frame           = 0
-            validation_attempts = 0
+            last_results         = None
+            locked_contour       = None
+            ocr_frame            = 0
+            validation_attempts  = 0
             attempts_to_validate = None
             cv2.putText(
                 frame, "No card detected",
