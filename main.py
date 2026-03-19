@@ -1,55 +1,39 @@
 import cv2
-import threading
 
 import config
 from detection.card_detector import detect_card
 from validation.colour_validator import detect_card_type
-from validation.ocr_validator import (
-    extract_text, keyword_confidence,
-    extract_student_number, has_name
-)
+from validation.ocr_validator import extract_text, keyword_confidence, extract_student_number, has_name
 from validation.layout_validator import validate_layout
-from validation.ml_validator import predict as ml_predict, is_model_available
-
 from comms.arduino_serial import send_result
 from comms.http_client import post_result
+from validation.ml_validator import predict as ml_predict, is_model_available
 from comms.blink import green_on
 from comms.buzzer import beep
+import threading
 
 from picamera2 import Picamera2
-
-
-# ---------------- COLOR FIX ---------------- #
-
-def fix_color(frame):
-    # PiCamera2 gives RGB → convert to BGR
-    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-
-    # Reduce blue tint
-    b, g, r = cv2.split(frame)
-    b = cv2.multiply(b, 0.85)
-    r = cv2.multiply(r, 1.15)
-
-    return cv2.merge([b, g, r])
 
 
 # ---------------- CAMERA ---------------- #
 
 def get_camera():
-    cam = Picamera2()
 
-    config_ = cam.create_preview_configuration(
-        main={"size": (640, 480), "format": "RGB888"}
-    )
-    cam.configure(config_)
-    cam.start()
+    if config.CAMERA_SOURCE == "pi":
+        cam = Picamera2()
+        cam.start()
+        cam.set_controls({"AfMode": 2})
+        return cam
 
-    cam.set_controls({
-        "AfMode": 2,
-        "AwbEnable": True
-    })
+    source = config.SOURCES[config.CAMERA_SOURCE]
+    cap = cv2.VideoCapture(source)
 
-    return cam
+    if not cap.isOpened():
+        raise RuntimeError(
+            f"Could not open camera source '{config.CAMERA_SOURCE}': {source}"
+        )
+
+    return cap
 
 
 # ---------------- VALIDATION ---------------- #
@@ -58,45 +42,48 @@ def run_validators(card_img):
 
     card_type, colour_conf = detect_card_type(card_img)
 
-    card_img = cv2.resize(card_img, (224, 224))
+    if card_type is None:
+        return {
+            "card_type": None,
+            "colour_conf": 0.0,
+            "text_conf": 0.0,
+            "layout_valid": False,
+            "layout_conf": 0.0,
+            "ml_conf": 0.0,
+            "student_number": None,
+            "name_found": False,
+            "score": 0.0,
+            "is_valid": False,
+        }
 
     text = extract_text(card_img)
-    text_conf = keyword_confidence(text, card_type or "ul_student")
-
-    student_number = extract_student_number(text, card_img)
+    text_conf = keyword_confidence(text, card_type)
+    student_number = extract_student_number(text)
     name_found = has_name(text)
 
-    layout_valid, layout_conf = validate_layout(card_img, card_type or "ul_student")
+    layout_valid, layout_conf = validate_layout(card_img, card_type)
 
     _, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
 
-    # ✅ Keyword fallback (VERY IMPORTANT)
-    keyword_hit = any(k in text.lower() for k in ["ul", "student", "university"])
-
     w = config.VALIDATION_WEIGHTS
 
-    score = (
-        colour_conf * w["colour"] +
-        text_conf * w["text"] +
-        layout_conf * w["layout"] +
-        ml_conf * w["ml"]
-    )
+    if is_model_available():
+        score = (
+            colour_conf * w["colour"] +
+            text_conf * w["text"] +
+            layout_conf * 0.1 +
+            ml_conf * 0.2
+        )
+    else:
+        score = (
+            colour_conf * w["colour"] +
+            text_conf * w["text"] +
+            layout_conf * w["layout"]
+        )
 
     score = round(score, 3)
 
-    # 🔴 FINAL STRICT RULES (balanced)
-    is_valid = (
-        score >= config.VALIDATION_SCORE_THRESHOLD and
-        layout_valid and
-        (
-            colour_conf > 0.5 or
-            keyword_hit
-        ) and
-        (
-            student_number is not None or
-            name_found
-        )
-    )
+    is_valid = score >= config.VALIDATION_SCORE_THRESHOLD
 
     return {
         "card_type": card_type,
@@ -161,7 +148,7 @@ def main():
 
     cap = get_camera()
 
-    print("Press Q to quit, D to toggle debug")
+    print(f"Camera source: {config.CAMERA_SOURCE} — press Q to quit, D to toggle debug view")
 
     debug = False
     last_card = None
@@ -169,17 +156,21 @@ def main():
     no_detect = 0
     last_results = None
     ocr_frame = 0
-    already_triggered = False  # ✅ FIXED
 
     COAST_FRAMES = 20
     OCR_INTERVAL = 8
 
     while True:
 
-        frame = cap.capture_array()
+        if config.CAMERA_SOURCE == "pi":
+            frame = cap.capture_array()
+            ret = True
+        else:
+            ret, frame = cap.read()
 
-        # ✅ FIX COLOR
-        frame = fix_color(frame)
+        if not ret:
+            print("Failed to read frame — check camera connection")
+            break
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
@@ -203,16 +194,10 @@ def main():
                 last_results = run_validators(card_img)
 
                 send_result(last_results["is_valid"])
-
-                threading.Thread(
-                    target=post_result,
-                    args=(last_results,),
-                    daemon=True
-                ).start()
-
+                post_result(last_results)
                 if last_results["is_valid"] and not already_triggered:
-                    threading.Thread(target=green_on, daemon=True).start()
-                    threading.Thread(target=beep, daemon=True).start()
+                    threading.Thread(target=green_on).start()
+                    threading.Thread(target=beep).start()
                     already_triggered = True
 
                 if not last_results["is_valid"]:
@@ -237,8 +222,9 @@ def main():
                 2,
             )
 
-        cv2.imshow("Validator", frame)
-
+        display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        cv2.imshow("Disability Card Validator", display_frame)
+        
         if debug:
             cv2.imshow("Canny Edges", edges)
 
@@ -249,6 +235,10 @@ def main():
 
         if key == ord("d"):
             debug = not debug
+            print(f"Debug mode {'ON' if debug else 'OFF'}")
+
+    if config.CAMERA_SOURCE != "pi":
+        cap.release()
 
     cv2.destroyAllWindows()
 
