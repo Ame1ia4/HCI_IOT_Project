@@ -23,6 +23,8 @@ from comms.blink import green_on
 from comms.buzzer import beep
 
 
+# ---------------- CAMERA ---------------- #
+
 def get_camera():
     if config.CAMERA_SOURCE == "pi":
         if Picamera2 is None:
@@ -31,7 +33,7 @@ def get_camera():
         cam = Picamera2()
 
         config_ = cam.create_preview_configuration(
-            main={"size": (640, 480), "format": "RGB888"}
+            main={"size": (640, 480), "format": "RGB888"}  # ✅ TRUE RGB
         )
         cam.configure(config_)
         cam.start()
@@ -56,8 +58,10 @@ def get_camera():
     raise RuntimeError(f"Could not open camera: {source}")
 
 
-def run_validators(card_img):
-    card_type, colour_conf = detect_card_type(card_img)
+# ---------------- VALIDATION ---------------- #
+
+def run_validators(card_img_bgr):
+    card_type, colour_conf = detect_card_type(card_img_bgr)
 
     if card_type is None:
         return {
@@ -66,26 +70,27 @@ def run_validators(card_img):
             "text_conf": 0.0,
             "layout_valid": False,
             "layout_conf": 0.0,
+            "ml_conf": 0.0,
             "student_number": None,
             "name_found": False,
             "name": None,
-            "db_found": False,
             "score": 0.0,
             "is_valid": False,
         }
 
-    card_img = cv2.resize(card_img, (224, 224))
+    card_img_bgr = cv2.resize(card_img_bgr, (224, 224))
 
-    text = extract_text(card_img)
+    text = extract_text(card_img_bgr)
     text_conf = keyword_confidence(text, card_type)
-    student_number = extract_student_number(text, card_img)
+    student_number = extract_student_number(text, card_img_bgr)
     name_found = has_name(text)
-    name = extract_name(text, card_img)
+    name = extract_name(text, card_img_bgr)
 
-    layout_valid, layout_conf = validate_layout(card_img, card_type)
-    ml_valid, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
+    layout_valid, layout_conf = validate_layout(card_img_bgr, card_type)
+    _, ml_conf = ml_predict(card_img_bgr) if is_model_available() else (False, 0.0)
 
     w = config.VALIDATION_WEIGHTS
+
     score = round(
         colour_conf * w["colour"] +
         text_conf   * w["text"] +
@@ -104,11 +109,31 @@ def run_validators(card_img):
         "student_number": student_number,
         "name_found": name_found,
         "name": name,
-        "db_found": False,
         "score": score,
         "is_valid": score >= config.VALIDATION_SCORE_THRESHOLD,
     }
 
+
+# ---------------- OVERLAY ---------------- #
+
+def draw_overlay(frame, contour, results):
+    colour = (0, 200, 0) if results["is_valid"] else (0, 0, 220)
+    label = "VALID" if results["is_valid"] else "INVALID"
+
+    cv2.drawContours(frame, [contour], -1, colour, 2)
+
+    x, y, w, h = cv2.boundingRect(contour)
+
+    cv2.rectangle(frame, (x, y - 36), (x + w, y), colour, -1)
+
+    cv2.putText(
+        frame, label,
+        (x + 6, y - 8),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2,
+    )
+
+
+# ---------------- MAIN ---------------- #
 
 def main():
     cap = get_camera()
@@ -124,17 +149,18 @@ def main():
     already_triggered = False
 
     COAST_FRAMES = 15
-    OCR_INTERVAL = 12
+    OCR_INTERVAL = 10
 
     def trigger_buzzer():
         beep()
 
     while True:
-        if config.CAMERA_SOURCE == "pi":
-            frame = cap.capture_array()  # ✅ KEEP RGB
 
+        # -------- CAPTURE -------- #
+        if config.CAMERA_SOURCE == "pi":
+            frame_rgb = cap.capture_array()  # ✅ RGB
         else:
-            ret, frame = cap.read()
+            ret, frame_rgb = cap.read()
             if not ret:
                 cap.release()
                 cap = get_camera()
@@ -144,9 +170,13 @@ def main():
         if frame_count % FRAME_SKIP != 0:
             continue
 
-        frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
+        frame_rgb = cv2.resize(frame_rgb, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
-        result = detect_card(frame, debug=False)
+        # 🔥 IMPORTANT: convert once for processing
+        frame_bgr = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR)
+
+        # -------- DETECTION -------- #
+        result = detect_card(frame_bgr, debug=False)
 
         if len(result) == 3:
             card_img, contour, _ = result
@@ -163,6 +193,7 @@ def main():
                 card_img = last_card
                 contour = last_contour
 
+        # -------- VALIDATION -------- #
         if card_img is not None:
             ocr_frame += 1
 
@@ -185,17 +216,13 @@ def main():
                 if not last_results["is_valid"]:
                     already_triggered = False
 
-            cv2.drawContours(
-                frame, [contour], -1,
-                (0, 255, 0) if last_results and last_results["is_valid"] else (0, 0, 255),
-                2
-            )
+            draw_overlay(frame_bgr, contour, last_results)
 
         else:
             last_results = None
             ocr_frame = 0
             cv2.putText(
-                frame, "No card detected",
+                frame_bgr, "No card detected",
                 (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
@@ -203,9 +230,8 @@ def main():
                 2
             )
 
-        # ✅ ONLY convert for display
-        display = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        cv2.imshow("Validator", display)
+        # -------- DISPLAY -------- #
+        cv2.imshow("Validator", frame_bgr)
 
         if cv2.waitKey(1) & 0xFF == ord("q"):
             break
