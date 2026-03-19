@@ -31,47 +31,69 @@ def perspective_transform(frame, pts):
     M = cv2.getPerspectiveTransform(rect, dst)
     return cv2.warpPerspective(frame, M, (dst_w, dst_h))
 
+def _detect_by_green_band(frame):
+    """
+    Fallback: Find the card based on the UL green band color.
+    """
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    # Get values from config
+    vals = CARD_COLOUR_RANGES["ul_student"]
+    mask = cv2.inRange(hsv, np.array(vals[0:5:2]), np.array(vals[1:6:2]))
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
+
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return None, None
+
+    band = max(contours, key=cv2.contourArea)
+    if cv2.contourArea(band) < 1500:
+        return None, None
+
+    bx, by, bw, bh = cv2.boundingRect(band)
+    card_h = int(bh / 0.40)
+    card_w = int(card_h * CARD_ASPECT_RATIO)
+    
+    cx, cy = bx + bw // 2, by + bh // 2
+    x1, y1 = max(cx - card_w // 2, 0), max(cy - card_h // 2, 0)
+    x2, y2 = min(x1 + card_w, frame.shape[1]), min(y1 + card_h, frame.shape[0])
+
+    crop = frame[y1:y2, x1:x2]
+    if crop.size == 0: return None, None
+    
+    warped = cv2.resize(crop, (856, 540))
+    pts = np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]], dtype=np.int32)
+    return warped, pts.reshape(-1, 1, 2)
+
 def detect_card(frame, debug=False):
     """
-    Locate a UL student card using improved smoothing to ignore internal patterns.
+    Main detection logic with heavy smoothing to ignore internal logos.
     """
-    # 1. PRE-PROCESSING (Focus on big shapes, ignore logos/patterns)
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    
-    # Increase blur to wash out the small logo details and text
     blurred = cv2.GaussianBlur(gray, (7, 7), 0) 
-    
-    # Canny with slightly higher thresholds to ignore noise
     edges = cv2.Canny(blurred, CANNY_THRESHOLD_LOW, CANNY_THRESHOLD_HIGH)
 
-    # 2. MORPHOLOGY (Bridge the gaps in the outer border)
-    # This makes the thin white lines in your 'Edges' view thicker so they connect
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     edges = cv2.dilate(edges, kernel, iterations=1)
     edges = cv2.erode(edges, kernel, iterations=1)
 
-    # 3. CONTOUR SEARCH
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     contours = sorted(contours, key=cv2.contourArea, reverse=True)
 
     for contour in contours[:8]:
         area = cv2.contourArea(contour)
-        if area < MIN_CARD_AREA:
-            break
+        if area < MIN_CARD_AREA: break
 
-        # Approximate the shape
         peri = cv2.arcLength(contour, True)
         approx = cv2.approxPolyDP(contour, 0.04 * peri, True)
 
-        # If it's not a perfect 4-point rect, force a bounding box around the shape
         if len(approx) == 4:
             pts = approx.reshape(4, 2).astype("float32")
         else:
-            # Fallback: Get the minimum area rectangle (handles jagged edges better)
             rect_min = cv2.minAreaRect(contour)
             pts = cv2.boxPoints(rect_min).astype("float32")
 
-        # 4. ASPECT RATIO VALIDATION
         rect = order_points(pts)
         (tl, tr, br, bl) = rect
         width = np.linalg.norm(tr - tl)
@@ -79,23 +101,17 @@ def detect_card(frame, debug=False):
 
         if height == 0 or width == 0: continue
         
-        # Check both orientations (Landscape vs Portrait)
         aspect = width / height
-        is_landscape = abs(aspect - CARD_ASPECT_RATIO) <= ASPECT_RATIO_TOL
-        is_portrait = abs((1/aspect) - CARD_ASPECT_RATIO) <= ASPECT_RATIO_TOL
-
-        if is_landscape or is_portrait:
-            warped = perspective_transform(frame, pts)
-            # Final output pts for drawing
-            contour_out = pts.astype(np.int32).reshape(-1, 1, 2)
+        if (abs(aspect - CARD_ASPECT_RATIO) <= ASPECT_RATIO_TOL or 
+            abs((1/aspect) - CARD_ASPECT_RATIO) <= ASPECT_RATIO_TOL):
             
+            warped = perspective_transform(frame, pts)
+            contour_out = pts.astype(np.int32).reshape(-1, 1, 2)
             if debug: return warped, contour_out, edges
             return warped, contour_out
 
-    # --- Fallback: green-band colour detection (existing logic) ---
-    from .card_detector import _detect_by_green_band # ensure this is importable
+    # Call the local fallback function directly (no import needed)
     warped, contour_out = _detect_by_green_band(frame)
     
-    if debug:
-        return warped, contour_out, edges
+    if debug: return warped, contour_out, edges
     return warped, contour_out

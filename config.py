@@ -24,8 +24,8 @@ ASPECT_RATIO_TOL     = 0.15   # Tightened from 0.20 to reject faces (which are r
 # Adjust this based on how close you hold the card to the camera
 # 10% of a 640x480 frame is about 30,000. Let's set a healthy middle ground.
 MIN_CARD_AREA        = 20000  # Increased from 5000 to ignore background clutter
-MAX_CARD_AREA        = 150000 # New: Ignore the whole screen/background if it's too big
-
+# Add this to config.py
+MAX_CARD_AREA = 100000  # Adjust this: it should be larger than a card but smaller than the whole screen
 # Increase Canny thresholds to ignore soft edges (like facial features)
 # and only catch sharp edges (like card borders)
 CANNY_THRESHOLD_LOW  = 100 
