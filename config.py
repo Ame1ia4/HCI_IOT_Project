@@ -4,7 +4,7 @@
 CAMERA_SOURCE = "pi"  # "phone" | "esp32" | "pi"
 
 SOURCES = {
-    "phone": "http://192.168.0.40:8080/video",
+    "phone": "http://10.54.155.148:8080/video",
     "esp32": "http://192.168.1.105/stream",
     "pi":    "/dev/video0",
 }
