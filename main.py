@@ -1,7 +1,6 @@
-import threading
-
 import cv2
-import numpy as np
+import threading
+import time
 
 try:
     from picamera2 import Picamera2
@@ -11,299 +10,194 @@ except ImportError:
 import config
 from detection.card_detector import detect_card
 from validation.colour_validator import detect_card_type
-from validation.ocr_validator import extract_text, keyword_confidence, extract_student_number
-from validation.supabase_validator import log_scan
+from validation.ocr_validator import (
+    extract_text, keyword_confidence,
+    extract_student_number, has_name, extract_name
+)
 from validation.layout_validator import validate_layout
 from validation.ml_validator import predict as ml_predict, is_model_available
+
 from comms.arduino_serial import send_result
 from comms.http_client import post_result
 from comms.blink import green_on
 from comms.buzzer import beep
 
-
-# ---------------- CAMERA ---------------- #
+# ---------------- CAMERA SETUP ---------------- #
 
 def get_camera():
     if config.CAMERA_SOURCE == "pi":
         if Picamera2 is None:
             raise RuntimeError("Picamera2 not installed")
+
         cam = Picamera2()
-        cfg = cam.create_preview_configuration(
+        # Configure for RGB to ensure color validation works correctly
+        config_ = cam.create_preview_configuration(
             main={"size": (640, 480), "format": "RGB888"}
         )
-        cam.configure(cfg)
+        cam.configure(config_)
         cam.start()
-        try:
-            cam.set_controls({"AfMode": 2, "AfTrigger": 0})
-        except Exception:
-            pass
+        cam.set_controls({"AfMode": 2, "AwbEnable": True})
         return cam
 
     source = config.SOURCES[config.CAMERA_SOURCE]
-    cap = cv2.VideoCapture(source)
-    if not cap.isOpened():
-        raise RuntimeError(f"Could not open camera source '{config.CAMERA_SOURCE}': {source}")
-    return cap
+    for attempt in range(5):
+        cap = cv2.VideoCapture(source)
+        time.sleep(1)
+        if cap.isOpened():
+            return cap
+        cap.release()
+        time.sleep(2)
 
+    raise RuntimeError(f"Could not open camera source '{config.CAMERA_SOURCE}': {source}")
 
 # ---------------- VALIDATION ---------------- #
 
 def run_validators(card_img):
-    """
-    Run all validators against the cropped card image.
-
-    Returns a dict with keys:
-      card_type, colour_conf, text_conf, layout_valid, layout_conf,
-      student_number, ml_conf, score, is_valid
-    """
     card_type, colour_conf = detect_card_type(card_img)
 
     if card_type is None:
         return {
-            "card_type":      None,
-            "colour_conf":    0.0,
-            "text_conf":      0.0,
-            "layout_valid":   False,
-            "layout_conf":    0.0,
-            "ml_conf":        0.0,
-            "student_number": None,
-            "score":          0.0,
-            "is_valid":       False,
+            "card_type": None, "colour_conf": 0.0, "text_conf": 0.0,
+            "layout_valid": False, "layout_conf": 0.0, "ml_conf": 0.0,
+            "student_number": None, "name_found": False, "name": None,
+            "score": 0.0, "is_valid": False,
         }
 
-    text           = extract_text(card_img)
-    text_conf      = keyword_confidence(text, card_type)
+    # OCR and Text Analysis
+    text = extract_text(card_img)
+    text_conf = keyword_confidence(text, card_type)
     student_number = extract_student_number(text, card_img)
+    name_found = has_name(text)
+    name = extract_name(text, card_img)
 
+    # Layout and ML Analysis
     layout_valid, layout_conf = validate_layout(card_img, card_type)
+    _, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
 
-    ml_valid, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
-
+    # Weighted Scoring
     w = config.VALIDATION_WEIGHTS
-    if is_model_available():
-        score = round(
-            colour_conf * w["colour"] +
-            text_conf   * w["text"]   +
-            layout_conf * w["layout"] +
-            ml_conf     * w["ml"],
-            3,
-        )
-    else:
-        total = w["colour"] + w["text"] + w["layout"]
-        score = round(
-            colour_conf * (w["colour"] / total) +
-            text_conf   * (w["text"]   / total) +
-            layout_conf * (w["layout"] / total),
-            3,
-        )
-
-    is_valid = score >= config.VALIDATION_SCORE_THRESHOLD
-
-    # Hard gate: zero keyword matches means this is not a UL card regardless
-    # of colour/layout score — prevents similar-coloured cards (learner permits
-    # etc.) from passing on colour alone.
-    if text_conf == 0.0:
-        is_valid = False
-
-    return {
-        "card_type":      card_type,
-        "colour_conf":    colour_conf,
-        "text_conf":      text_conf,
-        "layout_valid":   layout_valid,
-        "layout_conf":    layout_conf,
-        "ml_conf":        ml_conf,
-        "student_number": student_number,
-        "score":          score,
-        "is_valid":       is_valid,
-    }
-
-
-# ---------------- OVERLAY ---------------- #
-
-def draw_overlay(frame, contour, results):
-    colour = (0, 200, 0) if results["is_valid"] else (0, 0, 220)
-    label  = "VALID" if results["is_valid"] else "INVALID"
-
-    cv2.drawContours(frame, [contour], -1, colour, 3)
-
-    x, y, w, h = cv2.boundingRect(contour)
-    cv2.rectangle(frame, (x, y - 36), (x + w, y), colour, -1)
-    cv2.putText(
-        frame, label,
-        (x + 6, y - 8),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 255), 2,
+    score = round(
+        colour_conf * w["colour"] +
+        text_conf   * w["text"] +
+        layout_conf * w["layout"] +
+        (ml_conf * w.get("ml", 0.2) if is_model_available() else 0),
+        3
     )
 
-    id_str      = f"ID: {results['student_number']}" if results["student_number"] else "ID: not found"
-    attempt_str = f"Attempts: {results.get('attempts', '—')}"
-    debug_lines = [
-        f"Type:   {results['card_type'] or 'unknown'}",
-        f"Colour: {results['colour_conf']:.2f}  "
-        f"Text: {results['text_conf']:.2f}  "
-        f"Layout: {results['layout_conf']:.2f}  "
-        f"ML: {results['ml_conf']:.2f}",
-        f"Score:  {results['score']:.2f}  {id_str}  {attempt_str}",
-    ]
+    return {
+        "card_type": card_type,
+        "colour_conf": colour_conf,
+        "text_conf": text_conf,
+        "layout_valid": layout_valid,
+        "layout_conf": layout_conf,
+        "ml_conf": ml_conf,
+        "student_number": student_number,
+        "name_found": name_found,
+        "name": name,
+        "score": score,
+        "is_valid": score >= config.VALIDATION_SCORE_THRESHOLD,
+    }
 
+# ---------------- UI OVERLAY ---------------- #
+
+def draw_overlay(frame, contour, results):
+    if results is None: return
+    
+    # Draw bounding box around card
+    color = (0, 255, 0) if results["is_valid"] else (0, 0, 255) # RGB Logic
+    cv2.drawContours(frame, [contour], -1, color, 3)
+
+    # Info Labels
+    x, y, w, h = cv2.boundingRect(contour)
+    label = "VALID" if results["is_valid"] else "INVALID"
+    cv2.rectangle(frame, (x, y - 35), (x + 120, y), color, -1)
+    cv2.putText(frame, label, (x + 5, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+
+    # Debug Data at Bottom
     fh = frame.shape[0]
-    for i, line in enumerate(debug_lines):
-        cv2.putText(
-            frame, line,
-            (10, fh - 20 - (len(debug_lines) - 1 - i) * 22),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1,
-        )
+    debug_str = f"Type: {results['card_type']} | Score: {results['score']:.2f} | ML: {results['ml_conf']:.2f}"
+    cv2.putText(frame, debug_str, (10, fh - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
-
-# ---------------- MAIN ---------------- #
+# ---------------- MAIN LOOP ---------------- #
 
 def main():
     cap = get_camera()
-    print(f"Camera source: {config.CAMERA_SOURCE} — press Q to quit, D to toggle debug view")
+    
+    # State tracking
+    last_card, last_contour, last_results = None, None, None
+    no_detect, ocr_frame, frame_count = 0, 0, 0
+    already_triggered = False
+    debug_mode = False
 
-    debug             = False
-    last_card         = None
-    last_contour      = None
-    locked_contour    = None   # frozen at the moment of valid scan
-    no_detect         = 0
-    last_results      = None
-    ocr_frame         = 0
-    already_triggered    = False
-    validator_running    = False
-    validation_attempts  = 0
-    attempts_to_validate = None
+    COAST_FRAMES = 15
+    OCR_INTERVAL = 10
+    FRAME_SKIP = 2 
 
-    COAST_FRAMES = 20
-    OCR_INTERVAL = 8
-
-    buzzer_active = False
-
-    def trigger_buzzer():
-        nonlocal buzzer_active
-        if not buzzer_active:
-            buzzer_active = True
-            beep()
-            buzzer_active = False
-
-    def run_validators_async(card_img, snap_contour):
-        nonlocal last_results, validator_running, already_triggered
-        nonlocal validation_attempts, attempts_to_validate, locked_contour
-        results = run_validators(card_img)
-
-        # No UL green band detected — likely not a UL card (TV, book, etc.)
-        # Don't update display so random rectangles don't cause false INVALIDs
-        if results["card_type"] is None:
-            validator_running = False
-            return
-
-        validation_attempts += 1
-        results["attempts"] = validation_attempts
-        send_result(results["is_valid"])
-        post_result(results)
-        last_results = results
-        if results["is_valid"] and not already_triggered:
-            attempts_to_validate = validation_attempts
-            locked_contour       = snap_contour   # freeze box position
-            print(f"[Validator] Valid after {attempts_to_validate} attempt(s)")
-            log_scan(True)
-            threading.Thread(target=green_on).start()
-            threading.Thread(target=trigger_buzzer).start()
-            already_triggered    = True
-            validation_attempts  = 0
-        if not results["is_valid"]:
-            already_triggered = False
-        validator_running = False
+    print("System Active. Press 'Q' to quit, 'D' for debug.")
 
     while True:
         if config.CAMERA_SOURCE == "pi":
-            frame = cap.capture_array()
-            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-            b, g, r = cv2.split(frame)
-            b = cv2.multiply(b, 0.85)
-            r = cv2.multiply(r, 1.15)
-            frame = cv2.merge([b, g, r])
+            frame = cap.capture_array() # Pi gives RGB
         else:
-            ret, frame = cap.read()
-            if not ret:
-                print("Failed to read frame — check camera connection")
-                break
+            ret, frame_bgr = cap.read() # USB gives BGR
+            if not ret: break
+            # Convert USB BGR to RGB so the logic (detect_card/validators) stays consistent
+            frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+
+        frame_count += 1
+        if frame_count % FRAME_SKIP != 0:
+            continue
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
-
-        # Draw guide box so the user knows where to hold the card
-        fw, fh = config.FRAME_WIDTH, config.FRAME_HEIGHT
-        roi_x1 = fw // 8
-        roi_y1 = fh // 6
-        roi_x2 = fw - fw // 8
-        roi_y2 = fh - fh // 6
-        cv2.rectangle(frame, (roi_x1, roi_y1), (roi_x2, roi_y2), (180, 180, 180), 2)
-
-        # Crop to ROI before detection to eliminate background noise
-        roi = frame[roi_y1:roi_y2, roi_x1:roi_x2]
-        card_img, contour, edges = detect_card(roi, debug=True)
-
-        # Shift contour coordinates back to full-frame space for overlay
-        if contour is not None:
-            contour = contour + np.array([roi_x1, roi_y1])
+        
+        # --- DETECTION & VALIDATION LOGIC (All happens in RGB) ---
+        result = detect_card(frame, debug=debug_mode)
+        card_img = result[0] if result else None
+        contour = result[1] if result else None
+        edges = result[2] if len(result) == 3 else None
 
         if card_img is not None:
-            last_card    = card_img
-            last_contour = contour
-            no_detect    = 0
+            last_card, last_contour, no_detect = card_img, contour, 0
         else:
             no_detect += 1
             if no_detect <= COAST_FRAMES and last_card is not None:
-                card_img = last_card
-                contour  = last_contour
+                card_img, contour = last_card, last_contour
 
         if card_img is not None:
             ocr_frame += 1
-            if not validator_running and not already_triggered and (last_results is None or ocr_frame % OCR_INTERVAL == 0):
-                validator_running = True
-                threading.Thread(target=run_validators_async, args=(card_img, contour), daemon=True).start()
+            if last_results is None or ocr_frame % OCR_INTERVAL == 0:
+                last_results = run_validators(card_img)
+                
+                send_result(last_results["is_valid"])
+                threading.Thread(target=post_result, args=(last_results,), daemon=True).start()
 
-            if last_results is not None:
-                display_contour = locked_contour if (already_triggered and locked_contour is not None) else contour
-                draw_overlay(frame, display_contour, last_results)
-            if debug:
-                cv2.imshow("Warped Card", card_img)
+                if last_results["is_valid"] and not already_triggered:
+                    threading.Thread(target=green_on, daemon=True).start()
+                    threading.Thread(target=beep, daemon=True).start()
+                    already_triggered = True
+                elif not last_results["is_valid"]:
+                    already_triggered = False
+
+            draw_overlay(frame, contour, last_results)
         else:
-            if last_results is not None:
-                # Card just left the frame — end the session
-                post_result({"session_reset": True})
-                already_triggered = False
-            last_results         = None
-            locked_contour       = None
-            ocr_frame            = 0
-            validation_attempts  = 0
-            attempts_to_validate = None
-            cv2.putText(
-                frame, "No card detected",
-                (10, 30),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2,
-            )
+            last_results, ocr_frame, already_triggered = None, 0, False
+            cv2.putText(frame, "No card detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (150, 150, 150), 2)
 
-        cv2.imshow("Disability Card Validator", frame)
-
-        if debug:
-            cv2.imshow("Canny Edges", edges)
-        else:
-            for win in ("Canny Edges", "Warped Card"):
-                try:
-                    cv2.destroyWindow(win)
-                except cv2.error:
-                    pass
+        # --- THE FIX: DISPLAY ---
+        # We convert a COPY to BGR just for the window, 
+        # so the 'frame' used in the next loop stays correct.
+        display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        cv2.imshow("Card Validator", display_frame)
+        
+        if debug_mode and edges is not None:
+            cv2.imshow("Edges", edges)
 
         key = cv2.waitKey(1) & 0xFF
-        if key == ord("q"):
-            break
-        if key == ord("d"):
-            debug = not debug
-            print(f"Debug mode {'ON' if debug else 'OFF'}")
+        if key == ord("q"): break
+        if key == ord("d"): debug_mode = not debug_mode
 
-    if config.CAMERA_SOURCE != "pi":
-        cap.release()
+    if config.CAMERA_SOURCE != "pi": cap.release()
     cv2.destroyAllWindows()
-
-
+    
 if __name__ == "__main__":
     main()
