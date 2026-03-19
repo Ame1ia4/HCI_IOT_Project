@@ -217,6 +217,10 @@ def main():
         if config.CAMERA_SOURCE == "pi":
             frame = cap.capture_array()
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            b, g, r = cv2.split(frame)
+            b = cv2.multiply(b, 0.85)
+            r = cv2.multiply(r, 1.15)
+            frame = cv2.merge([b, g, r])
         else:
             ret, frame = cap.read()
             if not ret:
