@@ -21,6 +21,7 @@ from comms.arduino_serial import send_result
 from comms.http_client import post_result
 from comms.blink import green_on
 from comms.buzzer import beep
+from validation.supabase_validator import log_scan
 
 # ---------------- CAMERA SETUP ---------------- #
 
@@ -180,6 +181,7 @@ def main():
                 if last_results["is_valid"] and not already_triggered:
                     threading.Thread(target=green_on, daemon=True).start()
                     threading.Thread(target=beep, daemon=True).start()
+                    threading.Thread(target=log_scan, args=(True,), daemon=True).start()
                     already_triggered = True
                 elif not last_results["is_valid"]:
                     already_triggered = False

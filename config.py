@@ -52,7 +52,10 @@ CARD_KEYWORDS = {
 }
 
 # Integrations
-SUPABASE_ENABLED = False # Set to True if using
-SERIAL_ENABLED = False
-ENDPOINT_ENABLED = False # FIXED: Set to False to stop the Connection Refused errors
-ENDPOINT_URL = "http://127.0.0.1:5000/scan"
+SUPABASE_ENABLED = True
+SUPABASE_URL     = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY     = os.getenv("SUPABASE_KEY", "")
+SERIAL_ENABLED   = False
+ENDPOINT_ENABLED = False
+ENDPOINT_URL     = "http://127.0.0.1:5000/scan"
+ENDPOINT_TIMEOUT = 2
