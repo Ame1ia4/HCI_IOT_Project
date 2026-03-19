@@ -36,7 +36,7 @@ def validate_colour(card_img, card_type):
     mask = cv2.inRange(hsv, lower, upper)
     ratio = float(np.count_nonzero(mask)) / mask.size
 
-    if ratio < 0.08:  # need at least 8% matching pixels in the green band
+    if ratio < 0.12:  # need at least 12% matching pixels in the green band
         return False, 0.0
 
     # Scale ratio to a 0–1 confidence (saturates at ~50% coverage)

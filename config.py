@@ -19,8 +19,8 @@ FRAME_HEIGHT = 480
 # Card detection
 # ---------------------------------------------------------------------------
 CARD_ASPECT_RATIO    = 1.585  # ISO/IEC 7810 ID-1: 85.6mm x 54mm
-ASPECT_RATIO_TOL     = 0.35   # ± tolerance — loosened for real-world camera angles
-MIN_CARD_AREA        = 8000   # minimum contour area in pixels
+ASPECT_RATIO_TOL     = 0.22   # ± tolerance
+MIN_CARD_AREA        = 15000  # minimum contour area in pixels
 CANNY_THRESHOLD_LOW  = 50
 CANNY_THRESHOLD_HIGH = 150
 
@@ -44,7 +44,10 @@ CARD_COLOUR_RANGES = {
     # Broad S/V ranges to handle camera desaturation and lighting variation.
     # Hue is slightly tighter than original (45-105 vs 40-110) but the main
     # discriminator against non-UL cards is the text gate in run_validators.
-    "ul_student": (45, 105, 30, 255, 5, 220),
+    # UL dark green #006B3C — H≈77, S=255, V=107 in OpenCV HSV.
+    # Saturation minimum raised to 70 to reject faces/screens/walls which
+    # are mostly desaturated.  Hue tightened to 58-98.
+    "ul_student": (58, 98, 70, 255, 15, 210),
 }
 
 # ---------------------------------------------------------------------------
