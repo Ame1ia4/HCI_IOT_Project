@@ -131,17 +131,18 @@ def main():
 
     COAST_FRAMES = 15
     OCR_INTERVAL = 10
-    FRAME_SKIP = 2 # Process every 2nd frame to save CPU
+    FRAME_SKIP = 2 
 
     print("System Active. Press 'Q' to quit, 'D' for debug.")
 
     while True:
-        # 1. Capture Frame
         if config.CAMERA_SOURCE == "pi":
-            frame = cap.capture_array()
+            frame = cap.capture_array() # Pi gives RGB
         else:
-            ret, frame = cap.read()
+            ret, frame_bgr = cap.read() # USB gives BGR
             if not ret: break
+            # Convert USB BGR to RGB so the logic (detect_card/validators) stays consistent
+            frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
         frame_count += 1
         if frame_count % FRAME_SKIP != 0:
@@ -149,14 +150,12 @@ def main():
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
         
-        # 2. Detection
+        # --- DETECTION & VALIDATION LOGIC (All happens in RGB) ---
         result = detect_card(frame, debug=debug_mode)
-        # Handle varying return lengths from detect_card
         card_img = result[0] if result else None
         contour = result[1] if result else None
         edges = result[2] if len(result) == 3 else None
 
-        # 3. Persistence (Coast) Logic
         if card_img is not None:
             last_card, last_contour, no_detect = card_img, contour, 0
         else:
@@ -164,13 +163,11 @@ def main():
             if no_detect <= COAST_FRAMES and last_card is not None:
                 card_img, contour = last_card, last_contour
 
-        # 4. Validation and UI
         if card_img is not None:
             ocr_frame += 1
             if last_results is None or ocr_frame % OCR_INTERVAL == 0:
                 last_results = run_validators(card_img)
                 
-                # Comms & Triggers
                 send_result(last_results["is_valid"])
                 threading.Thread(target=post_result, args=(last_results,), daemon=True).start()
 
@@ -186,7 +183,9 @@ def main():
             last_results, ocr_frame, already_triggered = None, 0, False
             cv2.putText(frame, "No card detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (150, 150, 150), 2)
 
-        # 5. Display (The Fix: Convert RGB to BGR only for showing)
+        # --- THE FIX: DISPLAY ---
+        # We convert a COPY to BGR just for the window, 
+        # so the 'frame' used in the next loop stays correct.
         display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         cv2.imshow("Card Validator", display_frame)
         
@@ -199,6 +198,6 @@ def main():
 
     if config.CAMERA_SOURCE != "pi": cap.release()
     cv2.destroyAllWindows()
-
+    
 if __name__ == "__main__":
     main()
