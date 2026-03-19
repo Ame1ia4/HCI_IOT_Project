@@ -32,19 +32,19 @@ CANNY_THRESHOLD_LOW  = 100
 CANNY_THRESHOLD_HIGH = 200
 
 # Validation thresholds
-VALIDATION_SCORE_THRESHOLD = 0.45 # Increased: Much stricter
+VALIDATION_SCORE_THRESHOLD = 0.55
 
 VALIDATION_WEIGHTS = {
-    "colour": 0.20,
-    "text":   0.60, # Increased importance of text
-    "layout": 0.40,
-    "ml":     0.10,
+    "colour": 0.40,  # Trust the green band more
+    "text":   0.20,  # Lower text weight since it's failing to crop the full card
+    "layout": 0.30,  # Zone checks are good
+    "ml":     0.10,  
 }
 
 # HSV colour ranges (STRICTER GREEN)
 CARD_COLOUR_RANGES = {
     # Narrowed Hue to 50-90 to avoid yellowish or bluish greens
-    "ul_student": (50, 90, 50, 255, 40, 200), 
+    "ul_student": (35, 85, 40, 255, 30, 180),
 }
 
 CARD_KEYWORDS = {
