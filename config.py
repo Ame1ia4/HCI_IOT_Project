@@ -24,11 +24,12 @@ CANNY_THRESHOLD_HIGH = 150
 # Validation thresholds
 VALIDATION_SCORE_THRESHOLD = 0.58
 
+# Weights must sum to 1.0
 VALIDATION_WEIGHTS = {
     "colour": 0.40,
-    "text":   0.30, # Increased importance of text
+    "text":   0.35,
     "layout": 0.20,
-    "ml":     0.10,
+    "ml":     0.05,
 }
 
 # HSV colour ranges (STRICTER GREEN)
