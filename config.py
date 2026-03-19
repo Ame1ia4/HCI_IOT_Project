@@ -1,7 +1,7 @@
 # ---------------------------------------------------------------------------
 # Camera source
 # ---------------------------------------------------------------------------
-CAMERA_SOURCE = "phone"  # "phone" | "esp32" | "pi"
+CAMERA_SOURCE = "pi"  # "phone" | "esp32" | "pi"
 
 SOURCES = {
     "phone": "http://10.54.155.148:8080/video",
@@ -18,11 +18,12 @@ FRAME_HEIGHT = 480
 # ---------------------------------------------------------------------------
 # Card detection
 # ---------------------------------------------------------------------------
-CARD_ASPECT_RATIO    = 1.585  # ISO/IEC 7810 ID-1: 85.6mm x 54mm
-ASPECT_RATIO_TOL     = 0.35   # ± tolerance — loosened for real-world camera angles
-MIN_CARD_AREA        = 8000   # minimum contour area in pixels
-CANNY_THRESHOLD_LOW  = 50
-CANNY_THRESHOLD_HIGH = 150
+# Card detection
+CARD_ASPECT_RATIO    = 1.585
+ASPECT_RATIO_TOL     = 0.45   # more tolerant
+MIN_CARD_AREA        = 2500   # MUCH better for distance
+CANNY_THRESHOLD_LOW  = 30
+CANNY_THRESHOLD_HIGH = 120
 
 # ---------------------------------------------------------------------------
 # Validation thresholds
