@@ -222,8 +222,9 @@ def main():
                 2,
             )
 
-        cv2.imshow("Disability Card Validator", frame)
-
+        display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        cv2.imshow("Disability Card Validator", display_frame)
+        
         if debug:
             cv2.imshow("Canny Edges", edges)
 
