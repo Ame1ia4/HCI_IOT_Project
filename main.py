@@ -1,6 +1,7 @@
 import cv2
 import threading
 import time
+import numpy as np
 
 try:
     from picamera2 import Picamera2
@@ -21,6 +22,24 @@ from comms.arduino_serial import send_result
 from comms.http_client import post_result
 from comms.blink import green_on
 from comms.buzzer import beep
+
+
+# =========================
+# COLOR FIX (IMPORTANT)
+# =========================
+def fix_color(frame):
+    # Convert RGB → BGR (OpenCV standard)
+    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+    # Reduce blue tint manually
+    b, g, r = cv2.split(frame)
+
+    b = cv2.multiply(b, 0.85)   # reduce blue
+    r = cv2.multiply(r, 1.15)   # boost red
+
+    frame = cv2.merge([b, g, r])
+
+    return frame
 
 
 def get_camera():
@@ -46,32 +65,20 @@ def get_camera():
 def run_validators(card_img):
     card_type, colour_conf = detect_card_type(card_img)
 
-    if card_type is None:
-        return {
-            "card_type": None,
-            "colour_conf": 0.0,
-            "text_conf": 0.0,
-            "layout_valid": False,
-            "layout_conf": 0.0,
-            "ml_conf": 0.0,
-            "student_number": None,
-            "name_found": False,
-            "name": None,
-            "db_found": False,
-            "score": 0.0,
-            "is_valid": False,
-        }
-
     card_img = cv2.resize(card_img, (224, 224))
 
     text = extract_text(card_img)
-    text_conf = keyword_confidence(text, card_type)
+    text_conf = keyword_confidence(text, card_type if card_type else "ul_student")
+
     student_number = extract_student_number(text, card_img)
     name_found = has_name(text)
     name = extract_name(text, card_img)
 
-    layout_valid, layout_conf = validate_layout(card_img, card_type)
+    layout_valid, layout_conf = validate_layout(card_img, card_type or "ul_student")
     ml_valid, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
+
+    # 🔥 KEY FIX: allow keyword OR colour
+    keyword_hit = any(k.lower() in text.lower() for k in ["ul", "student", "university"])
 
     w = config.VALIDATION_WEIGHTS
     score = round(
@@ -84,11 +91,11 @@ def run_validators(card_img):
 
     is_valid = (
         score >= config.VALIDATION_SCORE_THRESHOLD and
-        student_number is not None and
-        name_found and
         layout_valid and
-        colour_conf > 0.6 and
-        text_conf > 0.3
+        (
+            colour_conf > 0.5 or
+            keyword_hit
+        )
     )
 
     return {
@@ -111,7 +118,7 @@ def main():
     cap = get_camera()
 
     frame_count = 0
-    FRAME_SKIP = 3
+    FRAME_SKIP = 2  # faster detection
 
     last_card = None
     last_contour = None
@@ -120,8 +127,8 @@ def main():
     ocr_frame = 0
     already_triggered = False
 
-    COAST_FRAMES = 15
-    OCR_INTERVAL = 12
+    COAST_FRAMES = 20
+    OCR_INTERVAL = 8
 
     def trigger_buzzer():
         beep()
@@ -129,8 +136,8 @@ def main():
     while True:
         frame = cap.capture_array()
 
-        # ✅ FIX COLOR: convert once to BGR (OpenCV standard)
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+        # ✅ FIX COLOR
+        frame = fix_color(frame)
 
         frame_count += 1
         if frame_count % FRAME_SKIP != 0:
@@ -139,7 +146,8 @@ def main():
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
         # ✅ Improve far detection
-        frame = cv2.convertScaleAbs(frame, alpha=1.3, beta=15)
+        frame = cv2.convertScaleAbs(frame, alpha=1.4, beta=20)
+        frame = cv2.GaussianBlur(frame, (5, 5), 0)
 
         result = detect_card(frame, debug=False)
 
