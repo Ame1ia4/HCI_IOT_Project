@@ -23,6 +23,9 @@ from comms.blink import green_on
 from comms.buzzer import beep
 
 
+# =========================
+# CAMERA SETUP
+# =========================
 def get_camera():
     if config.CAMERA_SOURCE == "pi":
         if Picamera2 is None:
@@ -56,9 +59,13 @@ def get_camera():
     raise RuntimeError(f"Could not open camera: {source}")
 
 
+# =========================
+# VALIDATION LOGIC (STRICT)
+# =========================
 def run_validators(card_img):
     card_type, colour_conf = detect_card_type(card_img)
 
+    # HARD FAIL if no card type
     if card_type is None:
         return {
             "card_type": None,
@@ -66,6 +73,7 @@ def run_validators(card_img):
             "text_conf": 0.0,
             "layout_valid": False,
             "layout_conf": 0.0,
+            "ml_conf": 0.0,
             "student_number": None,
             "name_found": False,
             "name": None,
@@ -76,15 +84,20 @@ def run_validators(card_img):
 
     card_img = cv2.resize(card_img, (224, 224))
 
+    # OCR
     text = extract_text(card_img)
     text_conf = keyword_confidence(text, card_type)
     student_number = extract_student_number(text, card_img)
     name_found = has_name(text)
     name = extract_name(text, card_img)
 
+    # Layout
     layout_valid, layout_conf = validate_layout(card_img, card_type)
+
+    # ML
     ml_valid, ml_conf = ml_predict(card_img) if is_model_available() else (False, 0.0)
 
+    # Weighted score
     w = config.VALIDATION_WEIGHTS
     score = round(
         colour_conf * w["colour"] +
@@ -92,6 +105,15 @@ def run_validators(card_img):
         layout_conf * w["layout"] +
         ml_conf     * w["ml"],
         3,
+    )
+
+    # 🔴 STRICT VALIDATION RULES (THIS FIXES YOUR ISSUE)
+    is_valid = (
+        score >= config.VALIDATION_SCORE_THRESHOLD and
+        student_number is not None and
+        name_found and
+        layout_valid and
+        colour_conf > 0.5
     )
 
     return {
@@ -106,10 +128,13 @@ def run_validators(card_img):
         "name": name,
         "db_found": False,
         "score": score,
-        "is_valid": score >= config.VALIDATION_SCORE_THRESHOLD,
+        "is_valid": is_valid,
     }
 
 
+# =========================
+# MAIN LOOP
+# =========================
 def main():
     cap = get_camera()
 
@@ -130,9 +155,11 @@ def main():
         beep()
 
     while True:
+        # =========================
+        # CAPTURE FRAME
+        # =========================
         if config.CAMERA_SOURCE == "pi":
-            frame = cap.capture_array()  # ✅ KEEP RGB
-
+            frame = cap.capture_array()  # already RGB
         else:
             ret, frame = cap.read()
             if not ret:
@@ -140,12 +167,18 @@ def main():
                 cap = get_camera()
                 continue
 
+            # 🔵 FIX BLUE TINT → convert BGR → RGB for processing
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+
         frame_count += 1
         if frame_count % FRAME_SKIP != 0:
             continue
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
 
+        # =========================
+        # CARD DETECTION
+        # =========================
         result = detect_card(frame, debug=False)
 
         if len(result) == 3:
@@ -163,6 +196,9 @@ def main():
                 card_img = last_card
                 contour = last_contour
 
+        # =========================
+        # VALIDATION
+        # =========================
         if card_img is not None:
             ocr_frame += 1
 
@@ -185,9 +221,10 @@ def main():
                 if not last_results["is_valid"]:
                     already_triggered = False
 
+            # Draw contour
             cv2.drawContours(
                 frame, [contour], -1,
-                (0, 255, 0) if last_results and last_results["is_valid"] else (0, 0, 255),
+                (0, 255, 0) if last_results and last_results["is_valid"] else (255, 0, 0),
                 2
             )
 
@@ -199,11 +236,13 @@ def main():
                 (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.6,
-                (100, 100, 100),
+                (150, 150, 150),
                 2
             )
 
-        # ✅ ONLY convert for display
+        # =========================
+        # DISPLAY (convert back to BGR)
+        # =========================
         display = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         cv2.imshow("Validator", display)
 
