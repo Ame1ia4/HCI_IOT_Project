@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Camera source
-CAMERA_SOURCE = "phone"  # "phone" | "esp32" | "pi"
+CAMERA_SOURCE = "pi"  # "phone" | "esp32" | "pi"
 
 SOURCES = {
     "phone": "http://10.54.155.148:8080/video",
