@@ -176,7 +176,8 @@ def main():
             ocr_frame += 1
             if last_results is None or ocr_frame % OCR_INTERVAL == 0:
                 last_results = run_validators(card_img)
-                
+                threading.Thread(target=post_result, args=(last_results,), daemon=True).start()
+
                 # Logic for triggers (Buzzer/LED)
                 if last_results["is_valid"] and not already_triggered:
                     threading.Thread(target=green_on, daemon=True).start()
