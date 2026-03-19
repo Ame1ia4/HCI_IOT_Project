@@ -22,12 +22,12 @@ CANNY_THRESHOLD_LOW  = 50
 CANNY_THRESHOLD_HIGH = 150
 
 # Validation thresholds
-VALIDATION_SCORE_THRESHOLD = 0.15 # Increased: Much stricter
+VALIDATION_SCORE_THRESHOLD = 0.45 # Increased: Much stricter
 
 VALIDATION_WEIGHTS = {
     "colour": 0.40,
-    "text":   0.30, # Increased importance of text
-    "layout": 0.20,
+    "text":   0.40, # Increased importance of text
+    "layout": 0.40,
     "ml":     0.10,
 }
 
