@@ -137,10 +137,10 @@ def main():
     print("System Active. Press 'Q' to quit, 'D' for debug.")
 
     while True:
-        # 1. CAPTURE & STANDARDIZE TO BGR
+        # 1. CAPTURE
         if config.CAMERA_SOURCE == "pi":
             frame_rgb = cap.capture_array() 
-            frame = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR) # Convert to BGR immediately
+            frame = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR) 
         else:
             ret, frame = cap.read()
             if not ret: break
@@ -151,24 +151,33 @@ def main():
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
         
-        # 2. DETECTION (Now consistently BGR)
+        # 2. DETECTION
         result = detect_card(frame, debug=debug_mode)
         card_img = result[0] if result else None
         contour = result[1] if result else None
         edges = result[2] if len(result) == 3 else None
 
-        if card_img is not None:
-            # 3. VALIDATION
+        # --- NEW: ANTI-FACE / ANTI-BACKGROUND SHAPE FILTER ---
+        is_valid_shape = False
+        if contour is not None:
+            area = cv2.contourArea(contour)
+            # Use the new MAX_CARD_AREA to ignore the background screen
+            if config.MIN_CARD_AREA < area < config.MAX_CARD_AREA:
+                # Check if it's roughly rectangular (4 corners)
+                peri = cv2.arcLength(contour, True)
+                approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
+                
+                # Faces usually have > 6 "corners" in a contour, cards have 4
+                if 4 <= len(approx) <= 6:
+                    is_valid_shape = True
+
+        # 3. VALIDATION (Only run if it looks like a card)
+        if card_img is not None and is_valid_shape:
             ocr_frame += 1
             if last_results is None or ocr_frame % OCR_INTERVAL == 0:
                 last_results = run_validators(card_img)
                 
-                if config.SERIAL_ENABLED:
-                    send_result(last_results["is_valid"])
-                
-                if config.ENDPOINT_ENABLED:
-                    threading.Thread(target=post_result, args=(last_results,), daemon=True).start()
-
+                # Logic for triggers (Buzzer/LED)
                 if last_results["is_valid"] and not already_triggered:
                     threading.Thread(target=green_on, daemon=True).start()
                     threading.Thread(target=beep, daemon=True).start()
@@ -178,10 +187,12 @@ def main():
 
             draw_overlay(frame, contour, last_results)
         else:
+            # Clear results if shape is lost or invalid
             last_results, ocr_frame, already_triggered = None, 0, False
-            cv2.putText(frame, "No card detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+            cv2.putText(frame, "Waiting for Card...", (10, 30), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
-        # 4. DISPLAY (Already BGR, no conversion needed)
+        # 4. DISPLAY
         cv2.imshow("Card Validator", frame)
         
         if debug_mode and edges is not None:

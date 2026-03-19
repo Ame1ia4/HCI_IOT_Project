@@ -16,17 +16,24 @@ FRAME_HEIGHT = 480
 
 # Card detection
 CARD_ASPECT_RATIO    = 1.585
-ASPECT_RATIO_TOL     = 0.20   # Tightened: 0.45 was too loose
-MIN_CARD_AREA        = 5000   # Increased: ignore small background objects
-CANNY_THRESHOLD_LOW  = 50
-CANNY_THRESHOLD_HIGH = 150
+ASPECT_RATIO_TOL     = 0.15   # Tightened from 0.20 to reject faces (which are rounder)
+
+# Adjust this based on how close you hold the card to the camera
+# 10% of a 640x480 frame is about 30,000. Let's set a healthy middle ground.
+MIN_CARD_AREA        = 20000  # Increased from 5000 to ignore background clutter
+MAX_CARD_AREA        = 150000 # New: Ignore the whole screen/background if it's too big
+
+# Increase Canny thresholds to ignore soft edges (like facial features)
+# and only catch sharp edges (like card borders)
+CANNY_THRESHOLD_LOW  = 100 
+CANNY_THRESHOLD_HIGH = 200
 
 # Validation thresholds
 VALIDATION_SCORE_THRESHOLD = 0.45 # Increased: Much stricter
 
 VALIDATION_WEIGHTS = {
-    "colour": 0.60,
-    "text":   0.40, # Increased importance of text
+    "colour": 0.20,
+    "text":   0.60, # Increased importance of text
     "layout": 0.60,
     "ml":     0.10,
 }
