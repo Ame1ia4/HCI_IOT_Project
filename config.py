@@ -15,6 +15,9 @@ FRAME_WIDTH  = 640
 FRAME_HEIGHT = 480
 
 # Card detection
+# --- config.py updates ---
+
+# Standard ID card is 85.6mm x 53.98mm = ~1.585 aspect ratio
 CARD_ASPECT_RATIO    = 1.585
 ASPECT_RATIO_TOL     = 0.15   # Tightened from 0.20 to reject faces (which are rounder)
 
@@ -29,20 +32,19 @@ CANNY_THRESHOLD_LOW  = 100
 CANNY_THRESHOLD_HIGH = 200
 
 # Validation thresholds
-VALIDATION_SCORE_THRESHOLD = 0.58
+VALIDATION_SCORE_THRESHOLD = 0.45 # Increased: Much stricter
 
-# Weights must sum to 1.0
 VALIDATION_WEIGHTS = {
-    "colour": 0.40,
-    "text":   0.35,
-    "layout": 0.20,
-    "ml":     0.05,
+    "colour": 0.20,
+    "text":   0.60, # Increased importance of text
+    "layout": 0.40,
+    "ml":     0.10,
 }
 
 # HSV colour ranges (STRICTER GREEN)
 CARD_COLOUR_RANGES = {
     # Narrowed Hue to 50-90 to avoid yellowish or bluish greens
-    "ul_student": (50, 95, 35, 255, 15, 210),
+    "ul_student": (50, 90, 50, 255, 40, 200), 
 }
 
 CARD_KEYWORDS = {
@@ -50,8 +52,7 @@ CARD_KEYWORDS = {
 }
 
 # Integrations
-SUPABASE_ENABLED = False
-SERIAL_ENABLED   = False
-ENDPOINT_ENABLED = True
-ENDPOINT_URL     = "http://127.0.0.1:5000/scan"
-ENDPOINT_TIMEOUT = 2
+SUPABASE_ENABLED = False # Set to True if using
+SERIAL_ENABLED = False
+ENDPOINT_ENABLED = False # FIXED: Set to False to stop the Connection Refused errors
+ENDPOINT_URL = "http://127.0.0.1:5000/scan"
