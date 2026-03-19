@@ -120,11 +120,12 @@ def draw_overlay(frame, contour, results):
 
 # ---------------- MAIN LOOP ---------------- #
 
+# ... (Keep your imports the same) ...
+
 def main():
     cap = get_camera()
     
-    # State tracking
-    last_card, last_contour, last_results = None, None, None
+    last_results = None
     no_detect, ocr_frame, frame_count = 0, 0, 0
     already_triggered = False
     debug_mode = False
@@ -136,13 +137,13 @@ def main():
     print("System Active. Press 'Q' to quit, 'D' for debug.")
 
     while True:
+        # 1. CAPTURE & STANDARDIZE TO BGR
         if config.CAMERA_SOURCE == "pi":
-            frame = cap.capture_array() # Pi gives RGB
+            frame_rgb = cap.capture_array() 
+            frame = cv2.cvtColor(frame_rgb, cv2.COLOR_RGB2BGR) # Convert to BGR immediately
         else:
-            ret, frame_bgr = cap.read() # USB gives BGR
+            ret, frame = cap.read()
             if not ret: break
-            # Convert USB BGR to RGB so the logic (detect_card/validators) stays consistent
-            frame = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
 
         frame_count += 1
         if frame_count % FRAME_SKIP != 0:
@@ -150,26 +151,23 @@ def main():
 
         frame = cv2.resize(frame, (config.FRAME_WIDTH, config.FRAME_HEIGHT))
         
-        # --- DETECTION & VALIDATION LOGIC (All happens in RGB) ---
+        # 2. DETECTION (Now consistently BGR)
         result = detect_card(frame, debug=debug_mode)
         card_img = result[0] if result else None
         contour = result[1] if result else None
         edges = result[2] if len(result) == 3 else None
 
         if card_img is not None:
-            last_card, last_contour, no_detect = card_img, contour, 0
-        else:
-            no_detect += 1
-            if no_detect <= COAST_FRAMES and last_card is not None:
-                card_img, contour = last_card, last_contour
-
-        if card_img is not None:
+            # 3. VALIDATION
             ocr_frame += 1
             if last_results is None or ocr_frame % OCR_INTERVAL == 0:
                 last_results = run_validators(card_img)
                 
-                send_result(last_results["is_valid"])
-                threading.Thread(target=post_result, args=(last_results,), daemon=True).start()
+                if config.SERIAL_ENABLED:
+                    send_result(last_results["is_valid"])
+                
+                if config.ENDPOINT_ENABLED:
+                    threading.Thread(target=post_result, args=(last_results,), daemon=True).start()
 
                 if last_results["is_valid"] and not already_triggered:
                     threading.Thread(target=green_on, daemon=True).start()
@@ -181,13 +179,10 @@ def main():
             draw_overlay(frame, contour, last_results)
         else:
             last_results, ocr_frame, already_triggered = None, 0, False
-            cv2.putText(frame, "No card detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (150, 150, 150), 2)
+            cv2.putText(frame, "No card detected", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
 
-        # --- THE FIX: DISPLAY ---
-        # We convert a COPY to BGR just for the window, 
-        # so the 'frame' used in the next loop stays correct.
-        display_frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        cv2.imshow("Card Validator", display_frame)
+        # 4. DISPLAY (Already BGR, no conversion needed)
+        cv2.imshow("Card Validator", frame)
         
         if debug_mode and edges is not None:
             cv2.imshow("Edges", edges)
@@ -198,6 +193,6 @@ def main():
 
     if config.CAMERA_SOURCE != "pi": cap.release()
     cv2.destroyAllWindows()
-    
+
 if __name__ == "__main__":
     main()

@@ -1,81 +1,48 @@
-# ---------------------------------------------------------------------------
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 # Camera source
-# ---------------------------------------------------------------------------
 CAMERA_SOURCE = "pi"  # "phone" | "esp32" | "pi"
 
 SOURCES = {
     "phone": "http://10.54.155.148:8080/video",
     "esp32": "http://192.168.1.105/stream",
-    "pi":    "/dev/video0",
+    "pi":    0, # Use 0 for local camera index if /dev/video0 fails
 }
 
-# ---------------------------------------------------------------------------
-# Frame settings
-# ---------------------------------------------------------------------------
 FRAME_WIDTH  = 640
 FRAME_HEIGHT = 480
 
-# ---------------------------------------------------------------------------
-# Card detection
-# ---------------------------------------------------------------------------
 # Card detection
 CARD_ASPECT_RATIO    = 1.585
-ASPECT_RATIO_TOL     = 0.45   # more tolerant
-MIN_CARD_AREA        = 2500   # MUCH better for distance
-CANNY_THRESHOLD_LOW  = 30
-CANNY_THRESHOLD_HIGH = 120
+ASPECT_RATIO_TOL     = 0.20   # Tightened: 0.45 was too loose
+MIN_CARD_AREA        = 5000   # Increased: ignore small background objects
+CANNY_THRESHOLD_LOW  = 50
+CANNY_THRESHOLD_HIGH = 150
 
-# ---------------------------------------------------------------------------
 # Validation thresholds
-# ---------------------------------------------------------------------------
-VALIDATION_SCORE_THRESHOLD = 0.55
+VALIDATION_SCORE_THRESHOLD = 0.75 # Increased: Much stricter
 
 VALIDATION_WEIGHTS = {
-    "colour": 0.40,  # colour of green band — very reliable
-    "text":   0.20,  # OCR keywords — less reliable on laminated cards under camera
-    "layout": 0.30,  # layout zone checks — very reliable
-    "ml":     0.10,  # ORB feature matching — falls back to 0 if no reference image
+    "colour": 0.40,
+    "text":   0.30, # Increased importance of text
+    "layout": 0.20,
+    "ml":     0.10,
 }
 
-# ---------------------------------------------------------------------------
-# HSV colour ranges for known card types
-# ---------------------------------------------------------------------------
+# HSV colour ranges (STRICTER GREEN)
 CARD_COLOUR_RANGES = {
-    # UL dark green #006B3C — OpenCV HSV: H≈77, S=255, V=107
-    # Broad S/V ranges to handle camera desaturation and lighting variation.
-    # Hue is slightly tighter than original (45-105 vs 40-110) but the main
-    # discriminator against non-UL cards is the text gate in run_validators.
-    "ul_student": (45, 105, 30, 255, 5, 220),
+    # Narrowed Hue to 50-90 to avoid yellowish or bluish greens
+    "ul_student": (50, 90, 50, 255, 40, 200), 
 }
 
-# ---------------------------------------------------------------------------
-# OCR keywords for known card types
-# ---------------------------------------------------------------------------
 CARD_KEYWORDS = {
-    "ul_student": ["University of Limerick", "UL", "Student", "University"],
+    "ul_student": ["University", "Limerick", "Student", "ID"],
 }
 
-# ---------------------------------------------------------------------------
-# Supabase
-# ---------------------------------------------------------------------------
-import os
-from dotenv import load_dotenv
-load_dotenv()
-
-SUPABASE_ENABLED = True
-SUPABASE_URL     = os.getenv("SUPABASE_URL", "")
-SUPABASE_KEY     = os.getenv("SUPABASE_KEY", "")
-
-# ---------------------------------------------------------------------------
-# Arduino serial communication
-# ---------------------------------------------------------------------------
-SERIAL_PORT    = "/dev/ttyUSB0"
-SERIAL_BAUD    = 9600
+# Integrations
+SUPABASE_ENABLED = False # Set to True if using
 SERIAL_ENABLED = False
-
-# ---------------------------------------------------------------------------
-# IoT HTTP endpoint
-# ---------------------------------------------------------------------------
-ENDPOINT_ENABLED = True
-ENDPOINT_URL     = "http://127.0.0.1:5000/scan"
-ENDPOINT_TIMEOUT = 2
+ENDPOINT_ENABLED = False # FIXED: Set to False to stop the Connection Refused errors
+ENDPOINT_URL = "http://127.0.0.1:5000/scan"
